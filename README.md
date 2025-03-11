@@ -54,7 +54,7 @@ The `app` directory contains the core server-side logic and API definitions. It'
 
 Browser use is based on: https://github.com/browser-use/browser-use
 
-However, it has been modified to use Claude API (rowser_use/agent/service.py)
+However, it has been modified to use Claude API (browser_use/agent/service.py)
 
 The `browser_use` directory houses the browser automation library, which is designed to be reusable and independent of the main `app` server. It provides:
 
