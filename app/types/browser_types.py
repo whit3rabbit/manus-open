@@ -6,99 +6,79 @@ from browser_use.controller.views import ExtractPageContentAction as BaseExtract
 class NoParamAction(BaseModel):
     pass
 
-
 class ScrollToTextAction(BaseModel):
     text: str
 
-
 class GetDropdownOptionsAction(BaseModel):
     index: int
-
 
 class SelectDropdownOptionAction(BaseModel):
     index: int
     text: str
 
-
 class ViewAction(BaseModel):
     delay: float
 
-
 class DoneAction(BaseModel):
     result: str
-
 
 class SaveImageAction(BaseModel):
     url: str
     file_path: str
 
-
 class SaveScreenshotAction(BaseModel):
     file_path: str
-
 
 class ExtractPageContentAction(BaseExtractPageContentAction):
     save_to_file_path: str | None = None
 
-
 class BrowserNavigateAction(BaseModel):
     url: str
 
-
 class BrowserViewAction(BaseModel):
     reload: bool | None = None
-
 
 class BrowserScreenshotAction(BaseModel):
     file: str
     reload: bool | None = None
 
-
 class BrowserRestartAction(BaseModel):
     url: str
-
 
 class BrowserClickAction(BaseModel):
     index: int | None = None
     coordinate_x: float | None = None
     coordinate_y: float | None = None
 
-
 class BrowserMoveMouseAction(BaseModel):
     coordinate_x: float
     coordinate_y: float
 
-
 class BrowserInputAction(BaseModel):
     index: int | None = None
     coordinate_x: float | None = None
-    press_enter: bool = None
-
+    coordinate_y: float | None = None
+    text: str
+    press_enter: bool | None = None
 
 class BrowserPressKeyAction(BaseModel):
     key: str
 
-
 class BrowserScrollUpAction(BaseModel):
     to_top: bool | None = None
 
-
 class BrowserScrollDownAction(BaseModel):
     to_bottom: bool | None = None
-
 
 class BrowserSelectOptionAction(BaseModel):
     index: int
     option: int
 
-
 class BrowserConsoleExecAction(BaseModel):
     javascript: str
 
-
 class BrowserConsoleViewAction(BaseModel):
     max_lines: int | None = None
-
 
 class BrowserAction(ActionModel):
     view: ViewAction | None = None
@@ -132,9 +112,8 @@ class BrowserAction(ActionModel):
     browser_console_exec: BrowserConsoleExecAction | None = None
     browser_console_view: BrowserConsoleViewAction | None = None
 
-
 class BrowserActionResult(BaseModel):
     url: str
     title: str
     result: str
-    pixels_below: int = None
+    pixels_below: int | None = None

@@ -27,14 +27,13 @@ class CLIResult(ToolResult):
     '''A ToolResult that can be rendered as a CLI output.'''
     pass
 
-
 class ToolFailure(ToolResult):
     '''A ToolResult that represents a failure.'''
     pass
-
 
 class ToolError(Exception):
     '''Raised when a tool encounters an error.'''
     def __init__(self, message):
         """Initialize ToolError with an error message."""
         self.message = message
+        super().__init__(message)

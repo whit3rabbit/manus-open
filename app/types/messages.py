@@ -1,6 +1,5 @@
 from typing import Literal, Optional, List
 from pydantic import BaseModel
-
 from browser_types import BrowserAction, BrowserActionResult
 
 TextEditorCommand = Literal['view', 'create', 'write', 'str_replace', 'find_content', 'find_file']
@@ -8,7 +7,6 @@ TextEditorCommand = Literal['view', 'create', 'write', 'str_replace', 'find_cont
 class CommonApiResult(BaseModel):
     status: Literal['success', 'error']
     error: Optional[str] = None
-
 
 class TextEditorAction(BaseModel):
     command: TextEditorCommand
@@ -25,32 +23,26 @@ class TextEditorAction(BaseModel):
     trailing_newline: Optional[bool] = None
     leading_newline: Optional[bool] = None
 
-
 class FileInfo(BaseModel):
     path: str
     content: str
     old_content: Optional[str] = None
 
-
 class TextEditorActionResult(CommonApiResult):
     result: str
     file_info: Optional[FileInfo] = None
-
 
 class BrowserActionRequest(BaseModel):
     action: BrowserAction
     screenshot_presigned_url: Optional[str] = None
     clean_screenshot_presigned_url: Optional[str] = None
 
-
 class BrowserActionResponse(CommonApiResult):
     result: Optional[BrowserActionResult] = None
-
 
 class TerminalWriteApiRequest(BaseModel):
     text: str
     enter: Optional[bool] = None
-
 
 class TerminalApiResponse(CommonApiResult):
     output: List[str]
@@ -71,12 +63,21 @@ class TerminalInputMessage(BaseModel):
     exec_dir: Optional[str] = None
 
     def create_response(self, type: TerminalOutputMessageType, result: str, output: List[str], terminal_status: TerminalStatus, sub_command_index: int):
-        return TerminalOutputMessage(type=type, terminal=self.terminal, action_id=self.action_id, sub_command_index=sub_command_index, result=result, output=output, terminal_status=terminal_status)
-
+        return TerminalOutputMessage(
+            type=type,
+            terminal=self.terminal,
+            action_id=self.action_id,
+            sub_command_index=sub_command_index,
+            result=result,
+            output=output,
+            terminal_status=terminal_status
+        )
 
 class TerminalOutputMessage(BaseModel):
     type: TerminalOutputMessageType
     terminal: str
     action_id: str
+    result: str  # Added to match create_response method
+    output: List[str]  # Added to match create_response method
     terminal_status: TerminalStatus = 'idle'
-    sub_command_index: Optional[int] = None # Added to match the create_response method
+    sub_command_index: Optional[int] = None
