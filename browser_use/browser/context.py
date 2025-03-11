@@ -904,7 +904,7 @@ class BrowserContext:
             # Handle class attributes
             if 'class' in element.attributes and element.attributes['class'] and include_dynamic_attributes:
                 # Define a regex pattern for valid class names in CSS
-                valid_class_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]*)
+                valid_class_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]*')
 
                 # Iterate through the class attribute values
                 classes = element.attributes['class'].split()

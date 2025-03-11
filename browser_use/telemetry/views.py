@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional
 from browser_use.controller.registry.views import ActionModel
+from collections.abc import  Sequence
+
 
 @dataclass
 class BaseTelemetryEvent(ABC):

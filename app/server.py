@@ -13,16 +13,16 @@ from fastapi import Body, FastAPI, HTTPException, Query, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from helpers.utils import upload_to_presigned_url, upload_file_parts
-from logger import logger
-from models import MultipartUploadRequest, MultipartUploadResponse
-from router import TimedRoute
-from terminal_socket_server import TerminalSocketServer
-from tools.base import ToolError
-from tools.browser.browser_manager import BrowserDeadError, BrowserManager, PageDeadError
-from tools.terminal import terminal_manager
-from tools.text_editor import text_editor
-from types.messages import BrowserActionRequest, BrowserActionResponse, TerminalApiResponse, TerminalWriteApiRequest, TextEditorAction, TextEditorActionResult
+from app.helpers.utils import upload_to_presigned_url, upload_file_parts
+from app.logger import logger
+from app.models import MultipartUploadRequest, MultipartUploadResponse
+from app.router import TimedRoute
+from app.terminal_socket_server import TerminalSocketServer
+from app.tools.base import ToolError
+from app.tools.browser.browser_manager import BrowserDeadError, BrowserManager, PageDeadError
+from app.tools.terminal import terminal_manager
+from app.tools.text_editor import text_editor
+from app.types.messages import BrowserActionRequest, BrowserActionResponse, TerminalApiResponse, TerminalWriteApiRequest, TextEditorAction, TextEditorActionResult
 
 app = FastAPI()
 app.router.route_class = TimedRoute
