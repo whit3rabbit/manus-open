@@ -68,6 +68,51 @@ The `browser_use` directory houses the browser automation library, which is desi
 
 **Relationship between `app` and `browser_use`**: The `app` directory leverages the `browser_use` library for browser automation functionalities. `app/server.py` and `app/terminal_socket_server.py` act as the entry points, using the tools and libraries from both `app` and `browser_use` to provide the API and WebSocket interfaces. `browser_use` is designed as a modular library that `app` integrates with, keeping the browser automation logic separate and reusable.
 
+### `app_data` Directory
+
+Currently, `app_data` contains a single subdirectory:
+
+- **`js/`**: This directory specifically stores JavaScript files.
+
+Inside the `js/` directory, you can find the following files based on the provided documentation:
+
+- **`getViewport.js`**:
+
+    - **Content**: Contains JavaScript code that, when executed in a browser, returns the current viewport dimensions (width and height) of the browser window.
+    - **Usage**: This script is likely used by the browser automation tools to determine the visible area of a webpage, which can be important for actions like scrolling, element visibility checks, and responsive design considerations.
+
+- **`runExtensionAction.js`**:
+
+    - **Content**: Contains JavaScript code designed to interact with browser extensions. It likely provides a mechanism to send messages to browser extensions and handle responses.
+    - **Usage**: This script suggests that the browser automation is capable of interacting with browser extensions programmatically. This could be used for tasks like:
+        - Triggering actions within browser extensions.
+        - Retrieving data from browser extensions.
+        - Controlling extension behavior as part of an automation workflow.
+
+- **`selectOption.js`**:
+
+    - **Content**: Contains JavaScript code that helps in selecting an option from a dropdown (`<select>`) element on a webpage.
+    - **Usage**: This script is used to programmatically interact with dropdown menus in web forms. It takes parameters (likely a CSS selector and option index) to locate and select a specific option within a dropdown, simulating user interaction with form elements.
+
+### How `app_data/js` is Used in the Application
+
+The JavaScript files in `app_data/js` are not directly executed as part of the backend server code (Python). Instead, they are designed to be:
+
+1. **Read by the Python Backend**: The Python code in the `app` and `browser_use` directories (likely within `browser_use/browser/context.py` and `browser_use/dom/service.py`) reads the content of these `.js` files.
+2. **Injected into the Browser Context**: The content of these JavaScript files is then injected into the browser context managed by Playwright. This is typically done using Playwright's `page.evaluate()` or `context.add_init_script()` methods.
+3. **Executed in the Browser**: Once injected, the JavaScript code runs within the security context of the webpage loaded in the browser. This allows the server to:
+    - Execute complex browser-side logic that is difficult or inefficient to perform from the server-side Python code.
+    - Interact directly with the DOM, browser APIs, and potentially browser extensions.
+    - Retrieve structured data from the webpage (like viewport dimensions or dropdown options).
+
+**Example Usage Scenario (Hypothetical):**
+
+When the server needs to get the viewport dimensions of a webpage during a browser automation task, it might:
+
+1. Read the content of `app_data/js/getViewport.js`.
+2. Use Playwright to execute this JavaScript code within the current browser page using `page.evaluate(getViewport_js_content)`.
+3. Receive the JSON response from the JavaScript execution, containing the viewport width and height.
+
 ## API Structure
 
 The API is structured to provide clear separation of concerns, with endpoints categorized by functionality.
