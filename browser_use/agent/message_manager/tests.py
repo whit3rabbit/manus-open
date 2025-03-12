@@ -44,17 +44,16 @@ def test_initial_messages(message_manager):
     # First message should be the system prompt
     assert isinstance(messages[0], SystemMessage)
     
-    # Should include a task message
+    # There should be at least one human message containing the task description.
     human_messages = [msg for msg in messages if isinstance(msg, HumanMessage)]
     assert any("Test task" in msg.content for msg in human_messages)
     
-    # Should include an example output
+    # There should be at least one AI message (e.g. example output or tool call).
     ai_messages = [msg for msg in messages if isinstance(msg, AIMessage)]
     assert len(ai_messages) > 0
 
 def test_add_state_message(message_manager):
     """Test adding browser state message"""
-    # Create a simple browser state
     browser_state = BrowserState(
         url="https://test.com",
         title="Test Page",
@@ -70,32 +69,28 @@ def test_add_state_message(message_manager):
         tabs=[TabInfo(page_id=1, url="https://test.com", title="Test Page")]
     )
     
-    # Count initial messages
     initial_message_count = len(message_manager.get_messages())
     
-    # Add state message
     message_manager.add_state_message(
         browser_state, 
-        None,  # No result
+        None,  # No result provided
         AgentStepInfo(step=1),
         use_vision=False
     )
     
-    # Get updated messages
     messages = message_manager.get_messages()
     
-    # Should have one more message
+    # Expect one additional message to be added.
     assert len(messages) == initial_message_count + 1
     
-    # Last message should be a HumanMessage containing state info
+    # The newly added message should be a HumanMessage containing state information.
     assert isinstance(messages[-1], HumanMessage)
     assert "Current browser state" in messages[-1].content
     assert "https://test.com" in messages[-1].content
     assert "Test Page" in messages[-1].content
 
 def test_add_state_with_memory_result(message_manager):
-    """Test adding state with result that should be included in memory"""
-    # Create a simple browser state
+    """Test adding state with a result that should be included in memory"""
     browser_state = BrowserState(
         url="https://test.com",
         title="Test Page",
@@ -111,13 +106,11 @@ def test_add_state_with_memory_result(message_manager):
         tabs=[TabInfo(page_id=1, url="https://test.com", title="Test Page")]
     )
     
-    # Create a result with content to be included in memory
     action_result = [ActionResult(
         extracted_content="Important content",
         include_in_memory=True
     )]
     
-    # Add state message with result
     message_manager.add_state_message(
         browser_state, 
         action_result,
@@ -125,18 +118,15 @@ def test_add_state_with_memory_result(message_manager):
         use_vision=False
     )
     
-    # Get updated messages
     messages = message_manager.get_messages()
     
-    # Last message should include the extracted content
+    # The resulting state message should include the important content.
     assert "Important content" in messages[-1].content
-    
-    # When include_in_memory is True, the content should be clearly marked
+    # And when memory inclusion is enabled, it should mark the content (e.g. with "Extracted:" or similar).
     assert "Extracted:" in messages[-1].content
 
 def test_add_state_with_non_memory_result(message_manager):
-    """Test adding state with result that should not be included in memory"""
-    # Create a simple browser state
+    """Test adding state with a result that should not be included in memory"""
     browser_state = BrowserState(
         url="https://test.com",
         title="Test Page",
@@ -152,13 +142,11 @@ def test_add_state_with_non_memory_result(message_manager):
         tabs=[TabInfo(page_id=1, url="https://test.com", title="Test Page")]
     )
     
-    # Create a result with content not to be included in memory
     action_result = [ActionResult(
         extracted_content="Temporary content",
         include_in_memory=False
     )]
     
-    # Add state message with result
     message_manager.add_state_message(
         browser_state, 
         action_result,
@@ -166,23 +154,19 @@ def test_add_state_with_non_memory_result(message_manager):
         use_vision=False
     )
     
-    # Get updated messages
     messages = message_manager.get_messages()
     
-    # Last message should still include the extracted content
+    # The message should still include the temporary content.
     assert "Temporary content" in messages[-1].content
-    
-    # The presentation might be different when include_in_memory is False
+    # And its presentation should indicate that it was not retained in memory.
     assert "Extracted:" in messages[-1].content
 
 def test_token_overflow_handling_with_real_flow(message_manager):
-    """Test how the message manager handles token overflow with a realistic message flow"""
-    # Set a low token limit to force overflow handling
+    """Test handling of token overflow in a realistic message flow"""
+    # Force a low token limit to trigger overflow handling.
     message_manager.max_input_tokens = 500
     
-    # Simulate a conversation with many messages
-    for i in range(20):  # Reduced from 200 to make the test faster
-        # Create browser state
+    for i in range(20):
         browser_state = BrowserState(
             url=f"https://test.com/page{i}",
             title=f"Test Page {i}",
@@ -198,7 +182,6 @@ def test_token_overflow_handling_with_real_flow(message_manager):
             tabs=[TabInfo(page_id=1, url=f"https://test.com/page{i}", title=f"Test Page {i}")]
         )
         
-        # Create result (different types for variety)
         action_result = None
         if i % 2 == 0:
             action_result = [ActionResult(
@@ -206,7 +189,6 @@ def test_token_overflow_handling_with_real_flow(message_manager):
                 include_in_memory=(i % 4 == 0)
             )]
         
-        # Add state message
         message_manager.add_state_message(
             browser_state, 
             action_result,
@@ -214,34 +196,28 @@ def test_token_overflow_handling_with_real_flow(message_manager):
             use_vision=False
         )
         
-    # Get the final messages
     messages = message_manager.get_messages()
     
-    # Token count should be within the limit
     total_tokens = message_manager.history.total_tokens
+    # Either the token count is within limit, or if trimmed, the number of messages is low.
     assert total_tokens <= message_manager.max_input_tokens or len(messages) <= 5
     
-    # System message should always be preserved
+    # The system prompt (first message) should be preserved.
     assert isinstance(messages[0], SystemMessage)
     
-    # Most recent messages should be preserved
+    # The most recent message should include the title of the last page.
     assert f"Test Page {19}" in messages[-1].content
 
 def test_add_new_task(message_manager):
     """Test adding a new task to the message manager"""
     initial_message_count = len(message_manager.get_messages())
     
-    # Add a new task
     new_task = "New test task"
     message_manager.add_new_task(new_task)
     
-    # Get updated messages
     messages = message_manager.get_messages()
-    
-    # Should have one more message
     assert len(messages) == initial_message_count + 1
-    
-    # Last message should be a HumanMessage containing the new task
+    # The new task should be contained in the last human message.
     assert isinstance(messages[-1], HumanMessage)
     assert new_task in messages[-1].content
 
@@ -249,17 +225,12 @@ def test_add_plan(message_manager):
     """Test adding a plan to the message manager"""
     initial_message_count = len(message_manager.get_messages())
     
-    # Add a plan
     plan = "1. Step one\n2. Step two\n3. Step three"
     message_manager.add_plan(plan)
     
-    # Get updated messages
     messages = message_manager.get_messages()
-    
-    # Should have one more message
     assert len(messages) == initial_message_count + 1
-    
-    # Last message should be an AIMessage containing the plan
+    # The plan should be contained within an AI message.
     assert isinstance(messages[-1], AIMessage)
     assert plan in messages[-1].content
 
@@ -269,7 +240,6 @@ def test_add_model_output(message_manager):
     
     initial_message_count = len(message_manager.get_messages())
     
-    # Create a model output
     model_output = AgentOutput(
         actions=[],
         current_state=AgentBrain(
@@ -280,22 +250,17 @@ def test_add_model_output(message_manager):
         )
     )
     
-    # Add model output
     message_manager.add_model_output(model_output)
     
-    # Get updated messages
     messages = message_manager.get_messages()
-    
-    # Should have two more messages (AI message and tool message)
+    # Expect two additional messages: one for the AI output and one for the associated tool message.
     assert len(messages) == initial_message_count + 2
-    
-    # Check message types
     assert isinstance(messages[-2], AIMessage)
     assert hasattr(messages[-2], "tool_calls")
 
 def test_filter_sensitive_data(message_manager):
     """Test filtering sensitive data from messages"""
-    # Create a message manager with sensitive data
+    # Create a message manager with sensitive data settings.
     manager = MessageManager(
         llm=None,
         task="Test task",
@@ -305,14 +270,13 @@ def test_filter_sensitive_data(message_manager):
         sensitive_data={"PASSWORD": "secret123", "API_KEY": "api-12345"}
     )
     
-    # Create a message with sensitive data references
+    # A message that contains placeholder markers for sensitive data.
     content = "Please use <secret>PASSWORD</secret> to login and <secret>API_KEY</secret> for API access"
     message = HumanMessage(content=content)
     
-    # Filter the message
     filtered_message = manager._filter_sensitive_data(message)
     
-    # Sensitive data should be replaced
+    # After filtering, the placeholders should be replaced with the actual sensitive values.
     assert "secret123" in filtered_message.content
     assert "api-12345" in filtered_message.content
     assert "<secret>" not in filtered_message.content

@@ -24,7 +24,11 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
-from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
+from browser_use.agent.message_manager.utils import (
+    convert_input_messages,
+    extract_json_from_model_output,
+    save_conversation,
+)
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
     ActionResult,
@@ -106,8 +110,8 @@ class Agent(Generic[Context]):
         validate_output: bool = False,
         message_context: Optional[str] = None,
         generate_gif: bool | str = False,
-        available_file_paths: Optional[list[str]] = None,
-        include_attributes: list[str] = [
+        available_file_paths: Optional[List[str]] = None,
+        include_attributes: List[str] = [
             'title',
             'type',
             'name',
@@ -357,10 +361,14 @@ class Agent(Generic[Context]):
 
             if step_info and step_info.is_last_step():
                 # Add last step warning if needed
-                msg = 'Now comes your last step. Use only the "done" action now. No other actions - so here your action sequence must have length 1.'
-                msg += '\nIf the task is not yet fully finished as requested by the user, set success in "done" to false! E.g. if not all steps are fully completed.'
-                msg += '\nIf the task is fully finished, set success in "done" to true.'
-                msg += '\nInclude everything you found out for the ultimate task in the done text.'
+                msg = (
+                    'Now comes your last step. Use only the "done" action now. No other actions - so here your action '
+                    'sequence must have length 1.\n'
+                    'If the task is not yet fully finished as requested by the user, set success in "done" to false! '
+                    'E.g. if not all steps are fully completed.\n'
+                    'If the task is fully finished, set success in "done" to true.\n'
+                    'Include everything you found out for the ultimate task in the done text.'
+                )
                 logger.info('Last step finishing up')
                 self._message_manager._add_message_with_tokens(HumanMessage(content=msg))
                 self.AgentOutput = self.DoneAgentOutput
@@ -380,7 +388,7 @@ class Agent(Generic[Context]):
                     target = self.settings.save_conversation_path + f'_{self.state.n_steps}.txt'
                     save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
 
-                self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
+                self._message_manager._remove_last_state_message()  # we don't want the whole state in the chat history
 
                 await self._raise_if_stopped_or_paused()
 
@@ -390,7 +398,7 @@ class Agent(Generic[Context]):
                 self._message_manager._remove_last_state_message()
                 raise e
 
-            result: list[ActionResult] = await self.multi_act(model_output.action)
+            result = await self.multi_act(model_output.action)
 
             self.state.last_result = result
 
@@ -489,7 +497,6 @@ class Agent(Generic[Context]):
         )
 
         history_item = AgentHistory(model_output=model_output, result=result, state=state_history, metadata=metadata)
-
         self.state.history.history.append(history_item)
 
     THINK_TAGS = re.compile(r'<think>.*?</think>', re.DOTALL)
@@ -520,13 +527,14 @@ class Agent(Generic[Context]):
             except (ValueError, ValidationError) as e:
                 logger.warning(f'Failed to parse model output: {output} {str(e)}')
                 raise ValueError('Could not parse response.')
-
         elif self.tool_calling_method is None:
             structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
             response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
             parsed: AgentOutput | None = response['parsed']
         else:
-            structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
+            structured_llm = self.llm.with_structured_output(
+                self.AgentOutput, include_raw=True, method=self.tool_calling_method
+            )
             response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
             parsed: AgentOutput | None = response['parsed']
 
@@ -538,13 +546,11 @@ class Agent(Generic[Context]):
             parsed.action = parsed.action[: self.settings.max_actions_per_step]
 
         log_response(parsed)
-
         return parsed
 
     def _log_agent_run(self) -> None:
         """Log the agent run"""
         logger.info(f'🚀 Starting task: {self.task}')
-
         logger.debug(f'Version: {self.version}, Source: {self.source}')
         self.telemetry.capture(
             AgentRunTelemetryEvent(
@@ -574,7 +580,6 @@ class Agent(Generic[Context]):
             await self.log_completion()
             if self.register_done_callback:
                 await self.register_done_callback(self.state.history)
-
             return True, True
 
         return False, False
@@ -602,19 +607,17 @@ class Agent(Generic[Context]):
                 self.state.last_result = result
 
             for step in range(max_steps):
-                # Check if we should stop due to too many failures
                 if self.state.consecutive_failures >= self.settings.max_failures:
                     logger.error(f'❌ Stopping due to {self.settings.max_failures} consecutive failures')
                     break
 
-                # Check control flags before each step
                 if self.state.stopped:
                     logger.info('Agent stopped')
                     break
 
                 while self.state.paused:
-                    await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
-                    if self.state.stopped:  # Allow stopping while paused
+                    await asyncio.sleep(0.2)
+                    if self.state.stopped:
                         break
 
                 step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
@@ -667,7 +670,6 @@ class Agent(Generic[Context]):
     ) -> list[ActionResult]:
         """Execute multiple actions"""
         results = []
-
         cached_selector_map = await self.browser_context.get_selector_map()
         cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
 
@@ -678,7 +680,6 @@ class Agent(Generic[Context]):
                 new_state = await self.browser_context.get_state()
                 new_path_hashes = set(e.hash.branch_path_hash for e in new_state.selector_map.values())
                 if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
-                    # next action requires index but there are new elements on the page
                     msg = f'Something new appeared after action {i} / {len(actions)}'
                     logger.info(msg)
                     results.append(ActionResult(extracted_content=msg, include_in_memory=True))
@@ -696,16 +697,14 @@ class Agent(Generic[Context]):
             )
 
             results.append(result)
-
             logger.debug(f'Executed action {i + 1} / {len(actions)}')
             if results[-1].is_done or results[-1].error or i == len(actions) - 1:
                 break
 
             await asyncio.sleep(self.browser_context.config.wait_between_actions)
-            # hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
 
         return results
-        
+
     async def rerun_history(
         self,
         history: AgentHistoryList,
@@ -725,22 +724,16 @@ class Agent(Generic[Context]):
         Returns:
                 List of action results
         """
-        # Execute initial actions if provided
         if self.initial_actions:
             result = await self.multi_act(self.initial_actions)
             self.state.last_result = result
 
         results = []
-
         for i, history_item in enumerate(history.history):
             goal = history_item.model_output.current_state.next_goal if history_item.model_output else ''
             logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
 
-            if (
-                not history_item.model_output
-                or not history_item.model_output.action
-                or history_item.model_output.action == [None]
-            ):
+            if not history_item.model_output or not history_item.model_output.action or history_item.model_output.action == [None]:
                 logger.warning(f'Step {i + 1}: No action to replay, skipping')
                 results.append(ActionResult(error='No action to replay'))
                 continue
@@ -751,7 +744,6 @@ class Agent(Generic[Context]):
                     result = await self._execute_history_step(history_item, delay_between_actions)
                     results.extend(result)
                     break
-
                 except Exception as e:
                     retry_count += 1
                     if retry_count == max_retries:
@@ -779,19 +771,16 @@ class Agent(Generic[Context]):
                 state,
             )
             updated_actions.append(updated_action)
-
             if updated_action is None:
                 raise ValueError(f'Could not find matching element {i} in current page')
-
         result = await self.multi_act(updated_actions)
-
         await asyncio.sleep(delay)
         return result
 
     async def _update_action_indices(
         self,
         historical_element: Optional[DOMHistoryElement],
-        action: ActionModel,  # Type this properly based on your action model
+        action: ActionModel,
         current_state: BrowserState,
     ) -> Optional[ActionModel]:
         """
@@ -802,7 +791,6 @@ class Agent(Generic[Context]):
             return action
 
         current_element = HistoryTreeProcessor.find_history_element_in_tree(historical_element, current_state.element_tree)
-
         if not current_element or current_element.highlight_index is None:
             return None
 
@@ -810,7 +798,6 @@ class Agent(Generic[Context]):
         if old_index != current_element.highlight_index:
             action.set_index(current_element.highlight_index)
             logger.info(f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}')
-
         return action
 
     async def load_and_rerun(self, history_file: Optional[str | Path] = None, **kwargs) -> list[ActionResult]:
@@ -825,7 +812,7 @@ class Agent(Generic[Context]):
             history_file = 'AgentHistory.json'
         history = AgentHistoryList.load_from_file(history_file, self.AgentOutput)
         return await self.rerun_history(history, **kwargs)
-        
+
     def save_history(self, file_path: Optional[str | Path] = None) -> None:
         """Save the history to a file"""
         if not file_path:
@@ -846,11 +833,10 @@ class Agent(Generic[Context]):
         """Stop the agent"""
         logger.info('⏹️ Agent stopping')
         self.state.stopped = True
-        
+
     def _convert_initial_actions(self, actions: List[Dict[str, Dict[str, Any]]]) -> List[ActionModel]:
         """Convert dictionary-based actions to ActionModel instances"""
         converted_actions = []
-        action_model = self.ActionModel
         for action_dict in actions:
             # Each action_dict should have a single key-value pair
             action_name = next(iter(action_dict))
@@ -868,14 +854,12 @@ class Agent(Generic[Context]):
             converted_actions.append(action_model)
 
         return converted_actions
-        
+
     async def _run_planner(self) -> Optional[str]:
         """Run the planner to analyze state and suggest next steps"""
-        # Skip planning if no planner_llm is set
         if not self.settings.planner_llm:
             return None
 
-        # Create planner message history using full message history
         planner_messages = [
             PlannerPrompt(self.controller.registry.get_prompt_description()).get_system_message(),
             *self._message_manager.get_messages()[1:],  # Use full message history except the first
@@ -883,25 +867,20 @@ class Agent(Generic[Context]):
 
         if not self.settings.use_vision_for_planner and self.settings.use_vision:
             last_state_message: HumanMessage = planner_messages[-1]
-            # remove image from last state message
             new_msg = ''
             if isinstance(last_state_message.content, list):
                 for msg in last_state_message.content:
                     if msg['type'] == 'text':  # type: ignore
                         new_msg += msg['text']  # type: ignore
                     elif msg['type'] == 'image_url':  # type: ignore
-                        continue  # type: ignore
+                        continue
             else:
                 new_msg = last_state_message.content
-
             planner_messages[-1] = HumanMessage(content=new_msg)
 
         planner_messages = convert_input_messages(planner_messages, self.planner_model_name)
-
-        # Get planner output
         response = await self.settings.planner_llm.ainvoke(planner_messages)
         plan = str(response.content)
-        # if deepseek-reasoner, remove think tags
         if self.planner_model_name == 'deepseek-reasoner':
             plan = self._remove_think_tags(plan)
         try:
@@ -914,7 +893,7 @@ class Agent(Generic[Context]):
             logger.info(f'Plan: {plan}')
 
         return plan
-        
+
     @property
     def message_manager(self) -> MessageManager:
         return self._message_manager
@@ -922,14 +901,14 @@ class Agent(Generic[Context]):
     async def _validate_output(self) -> bool:
         """Validate the output of the last action is what the user wanted"""
         system_msg = (
-            f'You are a validator of an agent who interacts with a browser. '
-            f'Validate if the output of last action is what the user wanted and if the task is completed. '
-            f'If the task is unclear defined, you can let it pass. But if something is missing or the image does not show what was requested dont let it pass. '
-            f'Try to understand the page and help the model with suggestions like scroll, do x, ... to get the solution right. '
+            'You are a validator of an agent who interacts with a browser. '
+            'Validate if the output of last action is what the user wanted and if the task is completed. '
+            'If the task is unclear defined, you can let it pass. But if something is missing or the image does not show what was requested dont let it pass. '
+            'Try to understand the page and help the model with suggestions like scroll, do x, ... to get the solution right. '
             f'Task to validate: {self.task}. Return a JSON object with 2 keys: is_valid and reason. '
-            f'is_valid is a boolean that indicates if the output is correct. '
-            f'reason is a string that explains why it is valid or not.'
-            f' example: {{"is_valid": false, "reason": "The user wanted to search for "cat photos", but the agent searched for "dog photos" instead."}}'
+            'is_valid is a boolean that indicates if the output is correct. '
+            'reason is a string that explains why it is valid or not. '
+            'example: {"is_valid": false, "reason": "The user wanted to search for \'cat photos\', but the agent searched for \'dog photos\' instead."}'
         )
 
         if self.browser_context.session:
@@ -943,13 +922,9 @@ class Agent(Generic[Context]):
             )
             msg = [SystemMessage(content=system_msg), content.get_user_message(self.settings.use_vision)]
         else:
-            # if no browser session, we can't validate the output
             return True
 
         class ValidationResult(BaseModel):
-            """
-            Validation results.
-            """
             is_valid: bool
             reason: str
 

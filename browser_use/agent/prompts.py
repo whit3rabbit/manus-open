@@ -20,7 +20,7 @@ class SystemPrompt:
     ):
         self.default_action_description = action_description
         self.max_actions_per_step = max_actions_per_step
-        prompt = ''
+
         if override_system_message:
             prompt = override_system_message
         else:
@@ -28,18 +28,18 @@ class SystemPrompt:
             prompt = self.prompt_template.format(max_actions=self.max_actions_per_step)
 
         if extend_system_message:
-            prompt += f'\n{extend_system_message}'
+            prompt += f"\n{extend_system_message}"
 
         self.system_message = SystemMessage(content=prompt)
 
     def _load_prompt_template(self) -> None:
         """Load the prompt template from the markdown file."""
         try:
-            # This works both in development and when installed as a package
-            with importlib.resources.files('browser_use.agent').joinpath('system_prompt.md').open('r') as f:
+            # Works both in development and when installed as a package
+            with importlib.resources.files("browser_use.agent").joinpath("system_prompt.md").open("r") as f:
                 self.prompt_template = f.read()
         except Exception as e:
-            raise RuntimeError(f'Failed to load system prompt template: {e}')
+            raise RuntimeError(f"Failed to load system prompt template: {e}")
 
     def important_rules(self) -> str:
         """
@@ -77,7 +77,6 @@ class SystemPrompt:
        {"go_to_url": {"url": "https://example.com"}},
        {"extract_page_content": {}}
      ]
-
 
 3. ELEMENT INTERACTION:
    - Only use indexes that exist in the provided element list
@@ -125,9 +124,7 @@ class SystemPrompt:
 
 10. Extraction:
 - If your task is to find information or do research - call extract_page_content on the specific pages to get and store the information.
-
-"""
-        rules += f"   - use maximum {self.max_actions_per_step} actions per sequence"
+""" + f"   - use maximum {self.max_actions_per_step} actions per sequence"
         return rules
 
     def input_format(self) -> str:
@@ -145,14 +142,12 @@ Example:
 [33]<button>Submit Form</button>
 [] Non-interactive text
 
-
 Notes:
 - Only elements with numeric indexes inside [] are interactive
 - [] elements provide context but cannot be interacted with
 """
 
     def example_response(self) -> str:
-        """Return an example response format"""
         return """
 {
   "current_state": {
@@ -172,17 +167,10 @@ Notes:
 """
 
     def get_system_message(self) -> SystemMessage:
-        """
-        Get the system prompt for the agent.
-
-        Returns:
-            SystemMessage: Formatted system prompt
-        """
         prompt = f"""You are a precise browser automation agent that interacts with websites through structured commands. Your role is to:
 1. Analyze the provided webpage elements and structure
 2. Use the given information to accomplish the ultimate task
 3. Respond with valid JSON containing your next action sequence and state assessment
-
 
 {self.input_format()}
 
@@ -192,18 +180,17 @@ Functions:
 {self.default_action_description}
 
 Remember: Your responses must be valid JSON matching the specified format. Each action in the sequence must be valid."""
-        
-        return self.system_message
+        return SystemMessage(content=prompt)
 
 
 class AgentMessagePrompt:
     def __init__(
         self,
-        state: 'BrowserState',
-        result: Optional[List['ActionResult']] = None,
-        include_attributes: list[str] = [],
+        state: "BrowserState",
+        result: Optional[List["ActionResult"]] = None,
+        include_attributes: List[str] = [],
         max_error_length: int = 100,
-        step_info: Optional['AgentStepInfo'] = None,
+        step_info: Optional["AgentStepInfo"] = None,
     ):
         self.state = state
         self.result = result
@@ -212,33 +199,30 @@ class AgentMessagePrompt:
         self.step_info = step_info
 
     def get_user_message(self, use_vision: bool = True) -> HumanMessage:
-        elements_text = self.state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
+        elements_text = self.state.element_tree.clickable_elements_to_string(
+            include_attributes=self.include_attributes
+        )
 
-        has_content_above = (self.state.pixels_above or 0) > 0
-        has_content_below = (self.state.pixels_below or 0) > 0
-
-        if elements_text != '':
-            if has_content_above:
+        if elements_text != "":
+            if self.state.pixels_above and self.state.pixels_above > 0:
                 elements_text = (
-                    f'... {self.state.pixels_above} pixels above - scroll or extract content to see more ...\n{elements_text}'
+                    f"... {self.state.pixels_above} pixels above - scroll or extract content to see more ...\n{elements_text}"
                 )
             else:
-                elements_text = f'[Start of page]\n{elements_text}'
-            if has_content_below:
-                elements_text = (
-                    f'{elements_text}\n... {self.state.pixels_below} pixels below - scroll or extract content to see more ...'
-                )
+                elements_text = f"[Start of page]\n{elements_text}"
+            if self.state.pixels_below and self.state.pixels_below > 0:
+                elements_text = f"{elements_text}\n... {self.state.pixels_below} pixels below - scroll or extract content to see more ..."
             else:
-                elements_text = f'{elements_text}\n[End of page]'
+                elements_text = f"{elements_text}\n[End of page]"
         else:
-            elements_text = 'empty page'
+            elements_text = "empty page"
 
         if self.step_info:
-            step_info_description = f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
+            step_info_description = f"Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}"
         else:
-            step_info_description = ''
-        time_str = datetime.now().strftime('%Y-%m-%d %H:%M')
-        step_info_description += f'Current date and time: {time_str}'
+            step_info_description = ""
+        time_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        step_info_description += f"Current date and time: {time_str}"
 
         state_description = f"""
 [Task history memory ends here]
@@ -255,34 +239,25 @@ Interactive elements from current page:
         if self.result:
             for i, result in enumerate(self.result):
                 if result.extracted_content:
-                    state_description += f'\nAction result {i + 1}/{len(self.result)}: {result.extracted_content}'
+                    state_description += f"\nAction result {i + 1}/{len(self.result)}: {result.extracted_content}"
                 if result.error:
-                    # only use last line of error
-                    error = result.error.split('\n')[-1]
-                    # Truncate error if it's too long
+                    error = result.error.split("\n")[-1]
                     if len(error) > self.max_error_length:
-                        error = error[:self.max_error_length] + '...'
-                    state_description += f'\nAction error {i + 1}/{len(self.result)}: {error}'
+                        error = error[:self.max_error_length] + "..."
+                    state_description += f"\nAction error {i + 1}/{len(self.result)}: {error}"
 
-        if self.state.screenshot and use_vision == True:
-            # Format message for vision model
-            return HumanMessage(
-                content=[
-                    {'type': 'text', 'text': state_description},
-                    {
-                        'type': 'image_url',
-                        'image_url': {'url': f'data:image/png;base64,{self.state.screenshot}'},  # , 'detail': 'low'
-                    },
-                ]
-            )
+        if self.state.screenshot and use_vision:
+            return HumanMessage(content=[
+                {"type": "text", "text": state_description},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{self.state.screenshot}"}}
+            ])
 
         return HumanMessage(content=state_description)
 
 
 class PlannerPrompt(SystemPrompt):
     def get_system_message(self) -> SystemMessage:
-        return SystemMessage(
-            content="""You are a planning agent that helps break down tasks into smaller steps and reason about the current state.
+        return SystemMessage(content="""You are a planning agent that helps break down tasks into smaller steps and reason about the current state.
 Your role is to:
 1. Analyze the current state and history
 2. Evaluate progress towards the ultimate goal
@@ -302,5 +277,4 @@ Your output format should be always a JSON object with the following fields:
 
 Ignore the other AI messages output structures.
 
-Keep your responses concise and focused on actionable insights."""
-        )
+Keep your responses concise and focused on actionable insights.""")
