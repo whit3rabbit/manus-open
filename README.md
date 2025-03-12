@@ -4,8 +4,8 @@ A containerized sandbox environment that enables AI agents to interact with term
 
 The code is reconstructed from bytecode with Claude 3.7's help:
 
-https://gist.github.com/jlia0/db0a9695b3ca7609c9b1a08dcbf872c9
-https://github.com/whit3rabbit/manus-open/issues/1
+* https://gist.github.com/jlia0/db0a9695b3ca7609c9b1a08dcbf872c9
+* https://github.com/whit3rabbit/manus-open/issues/1
 
 ## Overview
 
