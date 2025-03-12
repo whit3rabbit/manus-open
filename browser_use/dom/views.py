@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Dict, List, Optional
-
 from browser_use.dom.history_tree_processor.view import CoordinateSet, HashedDomElement, ViewportInfo
-from browser_use.utils import time_execution_sync
 
 # Avoid circular import issues
 if TYPE_CHECKING:
@@ -14,7 +12,7 @@ if TYPE_CHECKING:
 class DOMBaseNode:
     is_visible: bool
     # Use None as default and set parent later to avoid circular reference issues
-    parent: Optional['DOMElementNode']
+    parent: Optional['DOMElementNode'] = None
 
 
 @dataclass(frozen=False)
@@ -158,7 +156,7 @@ class DOMElementNode(DOMBaseNode):
 
             elif isinstance(node, DOMTextNode):
                 # Add text only if it doesn't have a highlighted parent
-                if not node.has_parent_with_highlight_index() and node.is_visible:  # and node.is_parent_top_element()
+                if not node.has_parent_with_highlight_index() and node.is_visible:
                     formatted_text.append(f'{node.text}')
 
         process_node(self, 0)
@@ -185,6 +183,10 @@ class DOMElementNode(DOMBaseNode):
                         return result
 
         return None
+
+    def get_advanced_css_selector(self) -> str:
+        from browser_use.browser.context import BrowserContext
+        return BrowserContext._enhanced_css_selector_for_element(self)
 
 
 class ElementTreeSerializer:

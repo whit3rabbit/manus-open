@@ -1,6 +1,6 @@
 import hashlib
-from typing import Optional
-
+from dataclasses import dataclass # in bytecode not accessed?
+from typing import Optional # in bytecode not accessed?
 from browser_use.dom.history_tree_processor.view import DOMHistoryElement, HashedDomElement
 from browser_use.dom.views import DOMElementNode
 
