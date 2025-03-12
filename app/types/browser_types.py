@@ -116,4 +116,11 @@ class BrowserActionResult(BaseModel):
     url: str
     title: str
     result: str
-    pixels_below: int | None = None
+    error: str | None = None
+    screenshot_uploaded: bool
+    clean_screenshot_uploaded: bool
+    clean_screenshot_path: str
+    elements: str
+    markdown: str
+    pixels_above: int
+    pixels_below: int

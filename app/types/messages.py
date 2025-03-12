@@ -1,4 +1,4 @@
-from typing import Literal, Optional, List
+from typing import Literal
 from pydantic import BaseModel
 from browser_types import BrowserAction, BrowserActionResult
 
@@ -6,46 +6,46 @@ TextEditorCommand = Literal['view', 'create', 'write', 'str_replace', 'find_cont
 
 class CommonApiResult(BaseModel):
     status: Literal['success', 'error']
-    error: Optional[str] = None
+    error: str | None = None
 
 class TextEditorAction(BaseModel):
     command: TextEditorCommand
     path: str
-    sudo: Optional[bool] = None
-    file_text: Optional[str] = None
-    view_range: Optional[List[int]] = None
-    old_str: Optional[str] = None
-    new_str: Optional[str] = None
-    insert_line: Optional[int] = None
-    glob: Optional[str] = None
-    regex: Optional[str] = None
-    append: Optional[bool] = None
-    trailing_newline: Optional[bool] = None
-    leading_newline: Optional[bool] = None
+    sudo: bool | None = None
+    file_text: str | None = None
+    view_range: list[int] | None = None
+    old_str: str | None = None
+    new_str: str | None = None
+    insert_line: int | None = None
+    glob: str | None = None
+    regex: str | None = None
+    append: bool | None = None
+    trailing_newline: bool | None = None
+    leading_newline: bool | None = None
 
 class FileInfo(BaseModel):
     path: str
     content: str
-    old_content: Optional[str] = None
+    old_content: str | None = None
 
 class TextEditorActionResult(CommonApiResult):
     result: str
-    file_info: Optional[FileInfo] = None
+    file_info: FileInfo | None = None
 
 class BrowserActionRequest(BaseModel):
     action: BrowserAction
-    screenshot_presigned_url: Optional[str] = None
-    clean_screenshot_presigned_url: Optional[str] = None
+    screenshot_presigned_url: str | None = None
+    clean_screenshot_presigned_url: str | None = None
 
 class BrowserActionResponse(CommonApiResult):
-    result: Optional[BrowserActionResult] = None
+    result: BrowserActionResult | None = None
 
 class TerminalWriteApiRequest(BaseModel):
     text: str
-    enter: Optional[bool] = None
+    enter: bool | None = None
 
 class TerminalApiResponse(CommonApiResult):
-    output: List[str]
+    output: list[str]
     result: str
     terminal_id: str
 
@@ -58,11 +58,11 @@ class TerminalInputMessage(BaseModel):
     type: TerminalInputMessageType
     terminal: str
     action_id: str
-    command: Optional[str] = None
-    mode: Optional[TerminalCommandMode] = None
-    exec_dir: Optional[str] = None
+    command: str | None = None
+    mode: TerminalCommandMode | None = None
+    exec_dir: str | None = None
 
-    def create_response(self, type: TerminalOutputMessageType, result: str, output: List[str], terminal_status: TerminalStatus, sub_command_index: int):
+    def create_response(self, type: TerminalOutputMessageType, result: str, output: list[str], terminal_status: TerminalStatus, sub_command_index: int):
         return TerminalOutputMessage(
             type=type,
             terminal=self.terminal,
@@ -77,7 +77,7 @@ class TerminalOutputMessage(BaseModel):
     type: TerminalOutputMessageType
     terminal: str
     action_id: str
-    result: str  # Added to match create_response method
-    output: List[str]  # Added to match create_response method
-    terminal_status: TerminalStatus = 'idle'
-    sub_command_index: Optional[int] = None
+    sub_command_index: int = 0 
+    result: str | None = None
+    output: list[str]
+    terminal_status: Literal['idle', 'running', 'unknown']
