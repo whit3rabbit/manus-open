@@ -59,24 +59,49 @@ app/
 
 The API is built with FastAPI and provides the following endpoints:
 
-| Endpoint                              | HTTP Method | Description                                                                                                                          |
-| ------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/file/upload_to_s3`                  | POST        | Upload a file to S3. Files larger than 10MB return multipart upload details.                                                       |
-| `/file/multipart_upload_to_s3`        | POST        | Upload file parts to S3 using presigned URLs for multipart upload.                                                                   |
-| `/file`                               | GET         | Download a file given its path.                                                                                                      |
-| `/request-download-attachments`       | POST        | Batch download files from specified URLs to a target folder.                                                                         |
-| `/browser/status`                     | GET         | Check the status of the browser automation service and view open tabs.                                                               |
-| `/browser/action`                     | POST        | Execute a browser action (navigate, click, input, screenshot, etc.) based on provided parameters.                                     |
-| `/text_editor`                        | POST        | Execute text editor actions (view, create, write, string replacement, find content, or find file).                                      |
-| `/init-sandbox`                       | POST        | Initialize the sandbox environment by writing provided secrets to the user's `.secrets` directory.                                     |
-| `/healthz`                            | GET         | Health check endpoint to verify API readiness.                                                                                       |
-| `/zip-and-upload`                     | POST        | Zip a project directory (excluding certain directories like node_modules) and upload the archive to S3.                                |
-| `/terminal`                           | WebSocket   | Connect to an interactive terminal session via WebSocket.                                                                            |
-| `/terminal/{terminal_id}/reset`       | POST        | Reset a specific terminal session.                                                                                                   |
-| `/terminal/reset-all`                 | POST        | Reset all active terminal sessions.                                                                                                  |
-| `/terminal/{terminal_id}/view`        | GET         | Retrieve the command history and output from a terminal session.                                                                     |
-| `/terminal/{terminal_id}/kill`        | POST        | Terminate the current process running in a terminal session.                                                                         |
-| `/terminal/{terminal_id}/write`       | POST        | Write input to a terminal session (optionally simulating an Enter key press).                                                          |
+### File Endpoints
+
+| HTTP Method | Endpoint                         | Description                                                                       |
+|-------------|----------------------------------|-----------------------------------------------------------------------------------|
+| POST        | `/file/upload_to_s3`             | Upload a file to S3. Returns multipart info if the file exceeds the size threshold. |
+| POST        | `/file/multipart_upload_to_s3`   | Upload file parts using presigned URLs for multipart uploads.                     |
+| GET         | `/file`                          | Download a file from a given path.                                                |
+| POST        | `/request-download-attachments`  | Batch download files from specified URLs and optionally save to a subfolder.       |
+
+### Browser Endpoints
+
+| HTTP Method | Endpoint            | Description                                                |
+|-------------|---------------------|------------------------------------------------------------|
+| GET         | `/browser/status`   | Get the current status of the browser manager.           |
+| POST        | `/browser/action`   | Execute a browser action (e.g., navigation, interactions). |
+
+### Terminal Endpoints
+
+| HTTP Method | Endpoint                                | Description                                                                                              |
+|-------------|-----------------------------------------|----------------------------------------------------------------------------------------------------------|
+| WebSocket   | `/terminal`                             | Establish a terminal connection for interactive sessions (via WebSocket).                                |
+| POST        | `/terminal/{terminal_id}/reset`         | Reset a specific terminal identified by `terminal_id`.                                                  |
+| POST        | `/terminal/reset-all`                   | Reset all active terminals.                                                                              |
+| GET         | `/terminal/{terminal_id}/view`          | View terminal history. Query parameter `full` toggles between full history and the last output only.     |
+| POST        | `/terminal/{terminal_id}/kill`          | Kill the current process running in the terminal.                                                      |
+| POST        | `/terminal/{terminal_id}/write`         | Write input to a terminal process (optionally sending an "enter" key).                                   |
+
+### Other Endpoints
+
+| HTTP Method | Endpoint          | Description                                                                     |
+|-------------|-------------------|---------------------------------------------------------------------------------|
+| POST        | `/text_editor`    | Execute a text editor action (e.g., open or update a file).                     |
+| POST        | `/init-sandbox`   | Initialize the sandbox environment by writing provided secrets to `.secrets`.    |
+| GET         | `/healthz`        | Health check endpoint to verify overall service status.                        |
+| POST        | `/zip-and-upload` | Zip a directory (excluding specific folders) and upload the archive to S3.       |
+
+---
+
+## WebSocket Information
+
+| WebSocket Endpoint | Description                                                                                           | Key Features                                                                                                                                                                                                                                                                                  |
+|--------------------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `/terminal`        | Terminal WebSocket endpoint for real-time interactive terminal sessions.                            | - **Connection Management:** Accepts new connections and maintains a continuous message loop.<br>- **Message Handling:** Validates incoming JSON messages using Pydantic and dispatches tasks based on the message type.<br>- **Task Management:** Creates asynchronous tasks for each action and cleans up on disconnect.<br>- **Command Support:** Supports terminal commands like reset, view history, kill process, and command execution (with different modes). |
 
 ## Running the Server
 

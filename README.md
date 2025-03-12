@@ -151,23 +151,6 @@ The API is structured to provide clear separation of concerns, with endpoints ca
 
 - **`GET /healthz`**: Provides a health check endpoint to verify if the server is running.
 
-## Installation
-
-1. **Clone the repository:**
-
-   ```bash
-   git clone <repository-url>
-   cd <repository-directory>
-   ```
-
-2. **Install dependencies using pip:**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-   Ensure you have Python and pip installed on your system.
-
 ## Usage
 
 ### Starting the Server
