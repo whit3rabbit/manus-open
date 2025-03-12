@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 
 # Constants
 JS_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), '../../app_data/js'))
+runExtensionActionJs = pathlib.Path(JS_DIR, 'runExtensionAction.js').read_text()
 URL_BLANK = 'about:blank'
 
 # Configure PIL logging
@@ -201,9 +202,9 @@ class BrowserContext:
         self.state = state or BrowserContextState()
         
         # Initialize these as None - they'll be set up when needed
-        self.session: BrowserSession | None = None
+        self.session = None
         self._page_event_handler = None
-        self.current_state: BrowserState | None = None
+        self.current_state = None
 
     async def __aenter__(self):
         """Async context manager entry"""
@@ -213,6 +214,19 @@ class BrowserContext:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
         await self.close()
+    
+    async def ensure_page_alive(self):
+        """Ensure the page is still alive"""
+        if self.session is None:
+            await self._initialize_session()
+            return
+        
+        try:
+            page = await self.get_current_page()
+            await page.evaluate('1')  # Basic check to see if page is responsive
+        except Exception:
+            # Page is not alive, reinitialize
+            await self._initialize_session()
 
     @time_execution_async('--close')
     async def close(self):
@@ -783,9 +797,131 @@ class BrowserContext:
                 return self.current_state
             raise
 
-    # Browser Actions
+    async def extract_content_info(self):
+        """Extract markdown from the page"""
+        page = await self.get_current_page()
+        try:
+            # Extract the main content
+            result = await page.evaluate("""
+            function extractContent() {
+                // Extract main article content
+                const article = document.querySelector('article');
+                if (article) {
+                    return article.innerText;
+                }
+                
+                // Try common content containers
+                const main = document.querySelector('main');
+                if (main) {
+                    return main.innerText;
+                }
+                
+                // Fallback to body content
+                return document.body.innerText;
+            }
+            extractContent();
+            """)
+            
+            return ExtractedPageContentInfo(
+                content=result,
+                url=page.url,
+                title=await page.title()
+            )
+        except Exception as e:
+            logger.error(f"Failed to extract content: {e}")
+            return ExtractedPageContentInfo(
+                content="",
+                url=page.url,
+                title=await page.title()
+            )
+
+    async def progressive_wait_for_load(self, timeout_ms: int = 30000):
+        """
+        分阶段等待页面加载
+        先等待 DOM 内容加载，再等待完全加载
+        如果任一阶段超时，继续执行但返回对应状态
+        @returns is_dom_ready, is_pdf
+        """
+        page = await self.get_current_page()
+        is_dom_ready = False
+        is_pdf = False
+        
+        try:
+            # Check if this is a PDF
+            is_pdf = await page.evaluate("""
+                document.querySelector('embed[type="application/pdf"]') != null ||
+                document.querySelector('object[type="application/pdf"]') != null ||
+                window.location.href.toLowerCase().endsWith('.pdf')
+            """)
+            
+            if is_pdf:
+                logger.debug("PDF detected, using minimal wait")
+                await asyncio.sleep(1)  # Minimal wait for PDF
+                return True, True
+                
+            # First wait for DOMContentLoaded
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms/2)
+                is_dom_ready = True
+            except PlaywrightTimeoutError:
+                logger.warning("DOMContentLoaded timeout")
+                return False, False
+                
+            # Then wait for full load
+            try:
+                await page.wait_for_load_state("load", timeout=timeout_ms/2)
+            except PlaywrightTimeoutError:
+                logger.warning("Full page load timeout")
+                # Continue with DOM content at least
+            
+            return is_dom_ready, is_pdf
+            
+        except Exception as e:
+            logger.error(f"Error during progressive load wait: {e}")
+            return is_dom_ready, is_pdf
+
+    async def _wait_page_content_load(self):
+        """Wait for page content to load"""
+        page = await self.get_current_page()
+        try:
+            # Wait for any potential AJAX or dynamic content
+            await asyncio.sleep(1)
+            
+            # Check if page is waiting on user input
+            is_waiting = await page.evaluate("""
+                document.querySelector('input:required:invalid') != null ||
+                document.querySelector('form:invalid') != null
+            """)
+            
+            if is_waiting:
+                logger.debug("Page requires user input, stopping wait")
+                return
+                
+            # Try to detect infinite loaders
+            start_time = time.time()
+            previous_html = await page.content()
+            
+            # Check for content stabilization
+            for _ in range(3):
+                await asyncio.sleep(0.5)
+                current_html = await page.content()
+                
+                if current_html == previous_html:
+                    logger.debug("Content stabilized")
+                    break
+                    
+                previous_html = current_html
+                
+                # If we've waited too long, stop
+                if time.time() - start_time > 5:
+                    logger.debug("Content wait timeout")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Error waiting for page content: {e}")
+
     @time_execution_async('--take_screenshot')
-    async def take_screenshot(self, full_page: bool = False) -> str:
+    async def take_screenshot(self, marked: bool = False, save_path: str = None) -> str:
         """
         Returns a base64 encoded screenshot of the current page.
         """
@@ -795,10 +931,14 @@ class BrowserContext:
         await page.wait_for_load_state()
 
         screenshot = await page.screenshot(
-            full_page=full_page,
+            full_page=False,
             animations='disabled',
         )
 
+        if save_path:
+            with open(save_path, 'wb') as f:
+                f.write(screenshot)
+                
         screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 
         return screenshot_b64
@@ -835,7 +975,6 @@ class BrowserContext:
             # Don't raise the error since this is not critical functionality
             pass
 
-    # Selector Generation Methods
     @classmethod
     def _convert_simple_xpath_to_css_selector(cls, xpath: str) -> str:
         """Converts simple XPath expressions to CSS selectors."""
@@ -904,7 +1043,7 @@ class BrowserContext:
             # Handle class attributes
             if 'class' in element.attributes and element.attributes['class'] and include_dynamic_attributes:
                 # Define a regex pattern for valid class names in CSS
-                valid_class_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]*)
+                valid_class_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]*')
 
                 # Iterate through the class attribute values
                 classes = element.attributes['class'].split()
@@ -1044,6 +1183,28 @@ class BrowserContext:
             logger.error(f'Failed to locate element: {str(e)}')
             return None
 
+    async def get_element(self, index: int) -> ElementHandle:
+        """
+        Get an element handle by its index
+        
+        Args:
+            index: The index of the element to get
+            
+        Returns:
+            The element handle
+        """
+        selector_map = await self.get_selector_map()
+        if index not in selector_map:
+            raise BrowserError(f'No element found with index {index}')
+            
+        element_node = selector_map[index]
+        element_handle = await self.get_locate_element(element_node)
+        
+        if element_handle is None:
+            raise BrowserError(f'Element with index {index} not found in DOM')
+            
+        return element_handle
+
     @time_execution_async('--input_text_element_node')
     async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
         """
@@ -1178,28 +1339,6 @@ class BrowserContext:
         element_node = selector_map[index]
         return await self._click_element_node(element_node)
 
-    async def get_element(self, index: int) -> ElementHandle:
-        """
-        Get an element handle by its index
-        
-        Args:
-            index: The index of the element to get
-            
-        Returns:
-            The element handle
-        """
-        selector_map = await self.get_selector_map()
-        if index not in selector_map:
-            raise BrowserError(f'No element found with index {index}')
-            
-        element_node = selector_map[index]
-        element_handle = await self.get_locate_element(element_node)
-        
-        if element_handle is None:
-            raise BrowserError(f'Element with index {index} not found in DOM')
-            
-        return element_handle
-
     @time_execution_async('--get_tabs_info')
     async def get_tabs_info(self) -> list[TabInfo]:
         """
@@ -1221,14 +1360,17 @@ class BrowserContext:
     async def switch_to_tab(self, page_id: int) -> None:
         """
         Switch to a specific tab by its page_id
-        
-        Args:
-            page_id: The ID of the page to switch to
+
+        @You can also use negative indices to switch to tabs from the end (Pure pythonic way)
         """
         session = await self.get_session()
         pages = session.context.pages
 
-        if page_id >= len(pages):
+        # Handle negative indices
+        if page_id < 0:
+            page_id = len(pages) + page_id
+
+        if page_id >= len(pages) or page_id < 0:
             raise BrowserError(f'No tab found with page_id: {page_id}')
 
         page = pages[page_id]
@@ -1431,6 +1573,71 @@ class BrowserContext:
         session.cached_state = None
         self.state.target_id = None
 
+    async def show_click_visual_effect(self, x: int, y: int):
+        """Show visual effect for clicking at coordinates"""
+        page = await self.get_current_page()
+        await page.evaluate("""
+        (x, y) => {
+            const clickEffect = document.createElement('div');
+            clickEffect.style.position = 'absolute';
+            clickEffect.style.width = '20px';
+            clickEffect.style.height = '20px';
+            clickEffect.style.borderRadius = '50%';
+            clickEffect.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
+            clickEffect.style.left = (x - 10) + 'px';
+            clickEffect.style.top = (y - 10) + 'px';
+            clickEffect.style.zIndex = '10000';
+            clickEffect.style.pointerEvents = 'none';
+            document.body.appendChild(clickEffect);
+            
+            // Animation
+            setTimeout(() => {
+                clickEffect.style.transition = 'all 0.5s ease-out';
+                clickEffect.style.transform = 'scale(2)';
+                clickEffect.style.opacity = '0';
+                setTimeout(() => {
+                    clickEffect.remove();
+                }, 500);
+            }, 50);
+        }
+        """, x, y)
+
+    def _get_initial_state(self, page: Page) -> BrowserState:
+        """
+        Get the initial state of the browser
+        
+        Args:
+            page: The current page
+            
+        Returns:
+            The initial browser state
+        """
+        return BrowserState(
+            element_tree=self._createRootNode(), 
+            selector_map={}, 
+            clickable_elements={}, 
+            article_markdown='', 
+            url=page.url if page else '', 
+            title='', 
+            tabs=[]
+        )
+
+    def _createRootNode(self) -> DOMElementNode:
+        """
+        Create the root DOM node
+        
+        Returns:
+            The root DOM node
+        """
+        return DOMElementNode(
+            False, 
+            None, 
+            '', 
+            '', 
+            {}, 
+            []
+        )
+
     async def _get_unique_filename(self, directory, filename):
         """
         Generate a unique filename by appending (1), (2), etc., if a file already exists
@@ -1473,38 +1680,17 @@ class BrowserContext:
             logger.debug(f'Failed to get CDP targets: {e}')
             return []
 
-    def _get_initial_state(self, page: Page) -> BrowserState:
+    async def _run_extension_action(self, action: str, data: dict = None, timeout: int = 30000):
         """
-        Get the initial state of the browser
-        
-        Args:
-            page: The current page
-            
-        Returns:
-            The initial browser state
+        Evaluates a function in the browser extension.
         """
-        return BrowserState(
-            element_tree=self._createRootNode(), 
-            selector_map={}, 
-            clickable_elements={}, 
-            article_markdown='', 
-            url=page.url if page else '', 
-            title='', 
-            tabs=[]
-        )
-
-    def _createRootNode(self) -> DOMElementNode:
-        """
-        Create the root DOM node
-        
-        Returns:
-            The root DOM node
-        """
-        return DOMElementNode(
-            False, 
-            None, 
-            '', 
-            '', 
-            {}, 
-            []
-        )
+        page = await self.get_current_page()
+        try:
+            result = await page.evaluate(
+                runExtensionActionJs,
+                {"action": action, "data": data or {}, "timeout": timeout}
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Extension action '{action}' failed: {e}")
+            raise BrowserError(f"Extension action failed: {str(e)}")
