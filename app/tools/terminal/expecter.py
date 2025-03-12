@@ -31,7 +31,7 @@ class MyExpecter(Expecter):
         # Check for existing data; if there is already data present, exit early.
         existing = self.existing_data()
         if existing is not None:
-            return None
+            return
 
         while True:
             try:
@@ -70,7 +70,7 @@ class MyExpecter(Expecter):
 
                 # If new_data returned something non-None, exit the loop.
                 if extra is not None:
-                    return None
+                    return
 
             except TIMEOUT:
                 # On TIMEOUT, wait briefly and continue the loop.
@@ -79,7 +79,7 @@ class MyExpecter(Expecter):
             except EOF:
                 # On EOF, yield termination signal and exit.
                 yield (True, b'')
-                return None
+                return
             except Exception as e:
                 # Yield an error message (encoded as bytes) and break the loop.
                 yield ("Error in expect loop: " + str(e)).encode()
