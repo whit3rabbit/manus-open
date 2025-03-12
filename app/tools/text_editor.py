@@ -64,7 +64,7 @@ class TextEditor:
             elif command == 'find_file':
                 return await self.find_file(path, action.glob or '*')
             else:
-                raise ToolError(f'Unknown command: {command}')
+                raise ToolError(f"Unrecognized command {command}. The allowed commands for the TextEditor tool are: {', '.join(get_args(Command))}")
                 
         except ToolError as e:
             return ToolResult(output=f"Error: {e.message}")
