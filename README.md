@@ -1,204 +1,378 @@
 # Manus Sandbox
 
-Claude generated files based on (bytecode):
+A containerized sandbox environment that enables AI agents to interact with terminal environments and web browsers programmatically.
+
+The code is reconstructed from bytecode with Claude 3.7's help:
 
 https://gist.github.com/jlia0/db0a9695b3ca7609c9b1a08dcbf872c9
+https://github.com/whit3rabbit/manus-open/issues/1
 
-## Description
+## Overview
 
-This repository implements a proxy server that allows users to interact with both terminal environments and web browsers programmatically. It offers a REST API for managing file operations, text editing, and browser actions, as well as WebSocket support for real-time terminal interaction. This setup is ideal for automation scenarios where you need to execute shell commands, interact with web pages, or manage files remotely.
+Manus Sandbox (this repo) is a container-based environment that provides a secure, isolated space for AI agents (particularly LLMs like Claude) to interact with terminal environments and web browsers. It acts as a bridge between the AI system and computing resources, allowing the AI to execute real-world tasks like:
 
-## Features
+- Running terminal commands
+- Automating browser actions
+- Managing files and directories
+- Editing text files
 
-- **Terminal Access via WebSocket**:
-    - Establish persistent WebSocket connections for interactive terminal sessions.
-    - Supports various terminal commands and operations like reset, kill process, and viewing history.
-- **Browser Automation via REST API**:
-    - Control browser actions such as navigation, clicking elements, inputting text, taking screenshots, and more through a REST API.
-    - Provides browser status checks and restart capabilities.
-- **File Management API**:
-    - Upload files to presigned URLs, including support for multipart uploads for large files.
-    - Download files and batch download multiple files to specified folders.
-    - Zip and upload entire project directories.
-- **Text Editor API**:
-    - Perform text editor operations like viewing file content, creating new files, writing to files, string replacement, and content searching.
-- **Sandbox Environment Initialization**:
-    - Initialize a sandbox environment by setting up secrets securely.
-- **Health Check Endpoint**:
-    - Provides a `/healthz` endpoint for monitoring server availability.
-- **Customizable Logging**:
-    - Configurable logging level to suit different operational needs (debug, info, warning, error, critical).
+This sandbox creates a controlled environment where AI systems can safely perform actions without having direct access to the host system.
 
-## Architecture Overview
+## Architecture
 
-The project is structured into two main directories that handle different aspects of the functionality: `app` and `browser_use`.
-
-### `app` Directory
-
-The `app` directory contains the core server-side logic and API definitions. It's built using FastAPI and is responsible for:
-
-- **API Routing (`app/router.py`):** Defines custom API route handling, including request timing and logging.
-- **Server Logic (`app/server.py`):** Implements the FastAPI application, defines API endpoints, and orchestrates interactions with terminal and browser components.
-- **WebSocket Server (`app/terminal_socket_server.py`):** Manages WebSocket connections for terminal sessions, handling message parsing and response sending.
-- **Tools (`app/tools/`):** Contains modules for different tools:
-    - `base.py`: Base classes and utilities for tools.
-    - `browser/`:  Manages browser interactions, actions, and browser management.
-    - `terminal/`: Manages terminal sessions, command execution, and terminal history.
-    - `text_editor.py`: Implements text editor functionalities.
-- **Helpers (`app/helpers/`):** Utility modules for common tasks:
-    - `tool_helpers.py`: Utilities for running shell commands.
-    - `utils.py`: General utility functions like file upload, text truncation, etc.
-- **Models (`app/models.py`):** Defines Pydantic models for request and response data structures.
-- **Logger (`app/logger.py`):** Configures logging for the application.
-- **Types (`app/types/`):** Defines type hints and Pydantic models for browser and message types.
-
-### `browser_use` Directory
-
-Browser use is based on: https://github.com/browser-use/browser-use
-
-However, it has been modified to use Claude API (browser_use/agent/service.py)
-
-The `browser_use` directory houses the browser automation library, which is designed to be reusable and independent of the main `app` server. It provides:
-
-- **Agent (`browser_use/agent/`):** Implements the agent logic for browser automation, message management, and prompts.
-- **Browser (`browser_use/browser/`):** Manages browser instances, contexts, and pages using Playwright.
-- **Controller (`browser_use/controller/`):** Defines actions and action registry for browser automation.
-- **DOM (`browser_use/dom/`):** Handles Document Object Model (DOM) processing and element interaction.
-- **Telemetry (`browser_use/telemetry/`):** Implements telemetry collection for usage metrics.
-- **Utils (`browser_use/utils.py`):** Utility functions for the `browser_use` library.
-- **Logging Configuration (`browser_use/logging_config.py`):** Configures logging specifically for the `browser_use` library.
-
-**Relationship between `app` and `browser_use`**: The `app` directory leverages the `browser_use` library for browser automation functionalities. `app/server.py` and `app/terminal_socket_server.py` act as the entry points, using the tools and libraries from both `app` and `browser_use` to provide the API and WebSocket interfaces. `browser_use` is designed as a modular library that `app` integrates with, keeping the browser automation logic separate and reusable.
-
-### `app_data` Directory
-
-Currently, `app_data` contains a single subdirectory:
-
-- **`js/`**: This directory specifically stores JavaScript files.
-
-Inside the `js/` directory, you can find the following files based on the provided documentation:
-
-- **`getViewport.js`**:
-
-    - **Content**: Contains JavaScript code that, when executed in a browser, returns the current viewport dimensions (width and height) of the browser window.
-    - **Usage**: This script is likely used by the browser automation tools to determine the visible area of a webpage, which can be important for actions like scrolling, element visibility checks, and responsive design considerations.
-
-- **`runExtensionAction.js`**:
-
-    - **Content**: Contains JavaScript code designed to interact with browser extensions. It likely provides a mechanism to send messages to browser extensions and handle responses.
-    - **Usage**: This script suggests that the browser automation is capable of interacting with browser extensions programmatically. This could be used for tasks like:
-        - Triggering actions within browser extensions.
-        - Retrieving data from browser extensions.
-        - Controlling extension behavior as part of an automation workflow.
-
-- **`selectOption.js`**:
-
-    - **Content**: Contains JavaScript code that helps in selecting an option from a dropdown (`<select>`) element on a webpage.
-    - **Usage**: This script is used to programmatically interact with dropdown menus in web forms. It takes parameters (likely a CSS selector and option index) to locate and select a specific option within a dropdown, simulating user interaction with form elements.
-
-### How `app_data/js` is Used in the Application
-
-The JavaScript files in `app_data/js` are not directly executed as part of the backend server code (Python). Instead, they are designed to be:
-
-1. **Read by the Python Backend**: The Python code in the `app` and `browser_use` directories (likely within `browser_use/browser/context.py` and `browser_use/dom/service.py`) reads the content of these `.js` files.
-2. **Injected into the Browser Context**: The content of these JavaScript files is then injected into the browser context managed by Playwright. This is typically done using Playwright's `page.evaluate()` or `context.add_init_script()` methods.
-3. **Executed in the Browser**: Once injected, the JavaScript code runs within the security context of the webpage loaded in the browser. This allows the server to:
-    - Execute complex browser-side logic that is difficult or inefficient to perform from the server-side Python code.
-    - Interact directly with the DOM, browser APIs, and potentially browser extensions.
-    - Retrieve structured data from the webpage (like viewport dimensions or dropdown options).
-
-**Example Usage Scenario (Hypothetical):**
-
-When the server needs to get the viewport dimensions of a webpage during a browser automation task, it might:
-
-1. Read the content of `app_data/js/getViewport.js`.
-2. Use Playwright to execute this JavaScript code within the current browser page using `page.evaluate(getViewport_js_content)`.
-3. Receive the JSON response from the JavaScript execution, containing the viewport width and height.
-
-## API Structure
-
-The API is structured to provide clear separation of concerns, with endpoints categorized by functionality.
-
-### Authentication and API Client
-
-I didn't actually see the header being used for the calls. However, in real world implementation an API token is used so that only
- valid API calls are allowed. The API key is set in: $HOME/.secrets/sandbox_api_token
-
-data_api.py is used as a api client. The original proxy service is located at: https://api.manus.im/apiproxy.v1.ApiProxyService/CallApi but you can set it to localhost.
-
-In order to work with API you need to create a key (assuming there is actually authentication):
-
-```bash
-curl -X GET http://localhost:8330/healthz -H "x-sandbox-token: dummy_api_key"
+```
+┌───────────────────────────┐                ┌─────────────────┐      ┌────────────────────────────────────────────┐
+│                           │                │                 │      │              Sandbox Container             │
+│    AI Agent (e.g. Claude) │                │  API Proxy      │      │                                            │
+│                           │                │                 │      │ ┌──────────┐  ┌─────────┐  ┌────────────┐  │
+│         MANUS             │  API Requests  │  - Auth check   │      │ │          │  │         │  │            │  │
+│                           │◄──────────────►│  - Rate limiting├─────►│ │ Terminal │  │ Browser │  │ File/Text  │  │
+│                           │  & Responses   │  - Routing      │      │ │ Service  │  │ Service │  │ Operations │  │
+│                           │                │                 │      │ │          │  │         │  │            │  │
+│                           │                │                 │      │ └────┬─────┘  └────┬────┘  └─────┬──────┘  │
+└───────────────────────────┘                └─────────────────┘      │      │             │             │         │
+                                             x-sandbox-token          │      │             │             │         │
+                                             authentication           │      v             v             v         │
+                                                                      │ ┌──────────────────────────────────────┐   │
+                                                                      │ │               FastAPI                │   │
+                                                                      │ │      (app/server.py + router.py)     │   │
+                                                                      │ └──────────────────────────────────────┘   │
+                                                                      │                                            │
+                                                                      └────────────────────────────────────────────┘
 ```
 
-But I don't see the token being used anywhere in code so it's possible that it's only being used on the proxy, but that's just a guess.
+## Key Components
 
-### Terminal API Endpoints
+1. **AI Agent**: The LLM (e.g., Claude) that sends API requests to the sandbox to perform tasks.
 
-- **`GET /terminal/{terminal_id}`**: Retrieves the content of a specific terminal session.
-- **`POST /terminal/{terminal_id}/reset`**: Resets a specific terminal session, clearing its history and restarting the shell.
-- **`POST /terminal/reset_all`**: Resets all active terminal sessions.
-- **`POST /terminal/{terminal_id}/kill`**: Kills the current process running in a specific terminal session.
-- **`POST /terminal/{terminal_id}/write`**: Writes text input to a specific terminal session.
-- **`WebSocket /terminal`**: Establishes a WebSocket connection for real-time, bidirectional communication with a terminal session.
+2. **API Proxy**: An intermediary service (`https://api.manus.im/apiproxy.v1.ApiProxyService/CallApi`) that:
+   - Authenticates requests using the `x-sandbox-token` header
+   - Routes requests to the appropriate sandbox instance
+   - Handles rate limiting and access control
 
-### Browser API Endpoints
+3. **Sandbox Container**: A Docker container that isolates the execution environment and provides:
+   - FastAPI server (`app/server.py`) - The main entry point for HTTP requests
+   - WebSocket server (`app/terminal_socket_server.py`) - For real-time terminal interaction
+   - File and text editing capabilities (`app/tools/text_editor.py`)
 
-- **`GET /browser/status`**: Checks the status of the browser automation service, indicating if it's running or stopped.
-- **`POST /browser/action`**: Executes a browser action. Accepts a JSON payload defining the action to be performed, such as navigation, clicking, inputting text, etc.
+4. **browser_use Library**: A modified version of the browser-use library that:
+   - Provides browser automation via Playwright
+   - Has been specifically adapted to work with Claude API (via `browser_use/agent/service.py`)
+   - Handles browser actions, DOM interactions, and browser session management
 
-### File API Endpoints
+## browser_use Integration
 
-- **`POST /upload_file`**: Uploads a single file to a pre-signed URL. Requires `file_path` and `presigned_url` in the request body.
-- **`POST /multipart_upload`**: Handles multipart uploads for large files, using pre-signed URLs for each part. Requires `file_path`, `presigned_urls` (list of pre-signed URLs for each part), and `part_size` in the request body.
-- **`GET /get_file/{path:path}`**: Serves a file for download from the server's filesystem. The file path is specified in the URL path.
-- **`POST /batch_download`**: Downloads multiple files from URLs to a specified folder on the server. Accepts a JSON payload with a list of files to download and an optional folder path.
-- **`POST /zip_and_upload`**: Zips a specified directory and uploads the archive to a pre-signed URL. Requires `directory`, `upload_url`, and `project_type` in the request body.
+The browser_use library is a key component of Manus Sandbox that enables browser automation. It provides a clean API for the AI to interact with web browsers programmatically.
 
-### Text Editor API Endpoints
+It is MIT licensced although the liscence was missing from the original source code.
 
-- **`POST /text_editor`**: Executes text editor actions. Accepts a JSON payload defining the text editor command (`view`, `create`, `write`, `str_replace`, `find_content`, `find_file`) and associated parameters like `path`, `file_text`, `old_str`, `new_str`, etc.
+### Key Classes and Components:
 
-### Sandbox Initialization API Endpoints
+#### Agent Class (browser_use/agent/service.py)
 
-- **`POST /init_sandbox`**: Initializes the sandbox environment with secrets. Accepts a JSON payload containing secrets as key-value pairs.
+The `Agent` class is the main entry point for browser automation. It handles:
 
-### Health Check API Endpoints
+- Initializing browser sessions
+- Processing LLM outputs into actions
+- Managing state history
+- Handling errors and retries
 
-- **`GET /healthz`**: Provides a health check endpoint to verify if the server is running.
-
-## Usage
-
-### Starting the Server
-
-To start the server, navigate to the repository directory and run:
-
-```bash
-python start_server.py
+```python
+class Agent:
+    def __init__(
+        self,
+        task: str,
+        llm: BaseChatModel,
+        browser: Browser | None = None,
+        # Many other parameters...
+    ):
+        # Initialize all components
+        
+    async def run(self, max_steps: int = 100) -> AgentHistoryList:
+        # Main execution loop
+        # Process LLM outputs and execute actions
 ```
 
-You can customize the server startup using command-line arguments:
+#### Browser Context (browser_use/browser/context.py)
 
-- `--port <port>`:  Specify the port number for the server (default: 8330).
-- `--host <host>`: Specify the host address to bind to (default: `0.0.0.0` for all interfaces).
-- `--log-level <level>`: Set the logging level (`debug`, `info`, `warning`, `error`, `critical`; default: `info`).
-- `--chrome-path <path>`: Provide a custom path to the Chrome browser executable.
+The `BrowserContext` class manages the browser state and provides methods for interacting with web pages:
 
-**Example with custom port and log level:**
-
-```bash
-python start_server.py --port 8080 --log-level debug
+```python
+class BrowserContext:
+    async def navigate_to(self, url: str):
+        """Navigate to a URL"""
+        
+    async def click_element(self, index: int):
+        """Click an element using its index"""
+        
+    async def input_text_to_element(self, index: int, text: str, delay: float = 0):
+        """Input text into an element"""
 ```
 
-### Interacting with the API
+#### System Prompts (browser_use/agent/prompts.py)
 
-Once the server is running, you can interact with the API endpoints using tools like `curl`, `httpie`, or any HTTP client. For WebSocket interactions, you can use tools like `wscat` or implement a WebSocket client in your preferred programming language.
+The `SystemPrompt` class defines the instructions given to the LLM about how to interact with the browser:
 
-Refer to the "API Structure" section for details on each endpoint and the required request formats.
+```python
+class SystemPrompt:
+    def important_rules(self) -> str:
+        """
+        Returns the important rules for the agent.
+        """
+        rules = """
+1. RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
+   {
+     "current_state": {
+        "page_summary": "Quick detailed summary of new information from the current page which is not yet in the task history memory. Be specific with details which are important for the task. This is not on the meta level, but should be facts. If all the information is already in the task history memory, leave this empty.",
+        "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are successful like intended by the task. Ignore the action result. The website is the ground truth. Also mention if something unexpected happened like new suggestions in an input field. Shortly state why/why not",
+       "memory": "Description of what has been done and what you need to remember. Be very specific. Count here ALWAYS how many times you have done something and how many remain. E.g. 0 out of 10 websites analyzed. Continue with abc and xyz",
+       "next_goal": "What needs to be done with the next actions"
+     },
+     "action": [
+       {
+         "one_action_name": {
+           // action-specific parameter
+         }
+       },
+       // ... more actions in sequence
+     ]
+   }
+        """
+        # More rules follow...
+        return rules
+```
 
-## Environment Variables
+The prompt instructs the LLM on:
 
-- **`CHROME_INSTANCE_PATH`**: (Optional) Specifies the path to a Chrome browser instance. If set, the server will use this instance for browser automation. If not set, the server will attempt to manage its own browser instance.
-- **`RUNTIME_API_HOST`**: (Optional) Specifies the host URL for the internal API aggregation platform (used by `data_api.py`). Defaults to `https://api.manus.im`.
-- **`BROWSER_USE_LOGGING_LEVEL`**: (Optional) Specifies the logging level for the `browser_use` library. Defaults to `info`.
+- How to format its responses (JSON structure)
+- Rules for interacting with browser elements
+- Navigation and error handling
+- Task completion criteria
+- Element interaction guidelines
+
+#### Controller Registry (browser_use/controller/registry/service.py)
+
+The `Registry` class provides a way to register and execute actions:
+
+```python
+class Registry:
+    def action(
+        self,
+        description: str,
+        param_model: Optional[Type[BaseModel]] = None,
+    ):
+        """Decorator for registering actions"""
+        
+    async def execute_action(
+        self,
+        action_name: str,
+        params: dict,
+        browser: Optional[BrowserContext] = None,
+        # Other parameters
+    ) -> Any:
+        """Execute a registered action"""
+```
+
+## How AI-Sandbox Communication Works
+
+The communication between an AI agent (like Claude) and the sandbox follows this flow:
+
+1. **AI Agent Formulates a Request**:
+   - The AI decides on an action to perform (e.g., run a terminal command, navigate a browser)
+   - It constructs an appropriate API request following the sandbox API specification
+
+2. **Request Transmission**:
+   - The AI sends an HTTP request to either:
+     - Directly to the sandbox container (if exposed)
+     - Through an API proxy service (`https://api.manus.im/apiproxy.v1.ApiProxyService/CallApi`)
+
+3. **Authentication**:
+   - The request includes an API token (`x-sandbox-token` header)
+   - The token is verified against the value stored in `$HOME/.secrets/sandbox_api_token`
+
+4. **Request Processing**:
+   - The sandbox FastAPI server receives and processes the request
+   - It routes the request to the appropriate service (terminal, browser, file operations)
+   - The requested action is performed within the isolated container environment
+
+5. **Response Return**:
+   - Results of the action are formatted as JSON or binary data (for file downloads)
+   - The response is sent back to the AI agent
+
+6. **Real-time Communication** (for terminal):
+   - Terminal sessions use WebSockets for bidirectional, real-time communication
+   - The AI can receive terminal output as it's generated and send new commands
+
+### Example Flow: AI Running a Shell Command
+
+```
+┌─────────────┐                 ┌───────────────┐              ┌──────────────────┐
+│             │ 1. HTTP Request │               │ 2. Route to  │                  │
+│  AI Agent   │────────────────►│ Sandbox API   │─────────────►│ Terminal Service │
+│             │                 │ (FastAPI)     │              │                  │
+│             │◄────────────────│               │◄─────────────│                  │
+└─────────────┘ 4. JSON Response└───────────────┘ 3. Execute   └──────────────────┘
+                                                    Command
+```
+
+## API Client Usage
+
+The sandbox includes a Python API client (`data_api.py`) that communicates with the proxy service:
+
+```python
+from data_api import ApiClient
+
+# Initialize the client
+api_client = ApiClient()
+
+# Call a terminal command
+response = api_client.call_api(
+    "terminal_execute",
+    body={
+        "command": "ls -la",
+        "terminal_id": "main"
+    }
+)
+
+print(response)
+```
+
+## LLM Response Format for Browser Automation
+
+When interacting with browser_use, the LLM (like Claude) must format its responses as JSON according to the schema defined in the system prompt:
+
+```json
+{
+  "current_state": {
+    "page_summary": "Found search page with 10 results for 'electric cars'",
+    "evaluation_previous_goal": "Success - successfully navigated to search page and performed search as intended",
+    "memory": "Completed search for 'electric cars'. Need to extract information from first 3 results (0 of 3 done)",
+    "next_goal": "Extract detailed information from first search result"
+  },
+  "action": [
+    {
+      "click_element": {
+        "index": 12
+      }
+    }
+  ]
+}
+```
+
+This response structure allows the Agent to:
+
+1. Track the LLM's understanding of the current page
+2. Evaluate the success of previous actions
+3. Maintain memory across interactions
+4. Execute the next action(s)
+
+## Available Browser Actions
+
+The browser_use library provides a wide range of actions for web automation:
+
+### Navigation Actions
+
+- `go_to_url`: Navigate to a specific URL
+- `search_google`: Perform a Google search
+- `go_back`: Navigate back in browser history
+- `open_tab`: Open a new browser tab
+- `switch_tab`: Switch between browser tabs
+
+### Element Interaction
+
+- `click_element`: Click on a page element by its index
+- `input_text`: Type text into a form field
+- `scroll_down`/`scroll_up`: Scroll the page
+- `scroll_to_text`: Scroll to find specific text
+- `select_dropdown_option`: Select from dropdown menus
+
+### Content Extraction
+
+- `extract_content`: Extract and process page content
+- `get_dropdown_options`: Get all options from a dropdown
+
+### Task Completion
+
+- `done`: Mark the task as complete and return results
+
+## Integration with LLM Systems
+
+To integrate an LLM with this sandbox:
+
+1. **API Client Implementation**: Create an API client in the LLM's execution environment
+
+2. **Task Planning**: The LLM should break down user requests into specific API calls
+
+3. **Sequential Operations**: Complex tasks often require multiple API calls in sequence
+
+4. **Error Handling**: The LLM should interpret error responses and adjust its approach
+
+5. **State Management**: For multi-step operations, the LLM needs to track the state of the environment
+
+## Example Workflow: LLM Using the Sandbox
+
+1. User asks the LLM to "Create a Python script that fetches weather data and save it"
+
+2. LLM plans the steps:
+   - Create a new Python file
+   - Write the code to fetch weather data
+   - Save the file
+   - Run the script to test it
+   - Show the results to the user
+
+3. LLM executes each step by making API calls to the sandbox:
+   - `POST /text_editor` with `command: "create"` to create a new file
+   - `POST /text_editor` with `command: "write"` to write the code
+   - `POST /terminal/{id}/write` to run the script
+   - `GET /terminal/{id}` to get the output
+   - Return the results to the user
+
+## Security Considerations
+
+1. **Multi-layered Authentication**:
+
+   - API token authentication using the `x-sandbox-token` header (NOT IMPLEMENTED IN THIS CODE)
+   - Token verification happens at the proxy layer before requests reach the FastAPI application  (NOT IMPLEMENTED IN THIS CODE)
+   - Tokens are stored securely in `$HOME/.secrets/sandbox_api_token`
+
+2. **Proxy Service Protection**:
+   - The proxy service provides an additional layer of security
+   - Acts as a gatekeeper for all requests to the sandbox
+   - Can implement rate limiting, request validation, and access control
+
+3. **Isolation**:
+   - The Docker container provides isolation from the host system
+   - Prevents the AI from affecting the host machine directly
+
+4. **Resource Limitations**:
+
+   - The sandbox can be configured with resource constraints (CPU, memory) at the Docker level
+   - Prevents resource exhaustion attacks
+
+5. **Action Restrictions**:
+
+   - The API can be configured to restrict certain dangerous operations
+   - Browser automation is contained within the sandbox environment
+
+## Deployment with Docker
+
+The sandbox is designed to run in a Docker container. The provided Dockerfile was not in the original code but gives an idea of what the container could look like:
+
+1. A Python 3.11 environment
+2. Chromium browser for web automation
+3. All necessary dependencies
+4. API token initialization
+
+To build and run the container:
+
+```bash
+# Build the container
+docker build -t manus-sandbox .
+
+# Run the container
+docker run -p 8330:8330 manus-sandbox
+```
+
+## Acknowledgements
+
+This project is reconstructed from bytecode with Claude 3.7's help, and it demonstrates the advanced capabilities of container-based AI sandboxes. The browser_use component is a modified version of the open-source [browser-use](https://github.com/browser-use/browser-use) library.
