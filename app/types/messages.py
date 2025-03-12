@@ -1,6 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel
-from browser_types import BrowserAction, BrowserActionResult
+from app.types.browser_types import BrowserAction, BrowserActionResult
 
 TextEditorCommand = Literal['view', 'create', 'write', 'str_replace', 'find_content', 'find_file']
 

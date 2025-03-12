@@ -1,6 +1,8 @@
-# Manus Reworked
+# Manus Sandbox
 
-Claude generated files based on: https://gist.github.com/jlia0/db0a9695b3ca7609c9b1a08dcbf872c9
+Claude generated files based on (bytecode):
+
+https://gist.github.com/jlia0/db0a9695b3ca7609c9b1a08dcbf872c9
 
 ## Description
 
@@ -116,6 +118,21 @@ When the server needs to get the viewport dimensions of a webpage during a brows
 ## API Structure
 
 The API is structured to provide clear separation of concerns, with endpoints categorized by functionality.
+
+### Authentication and API Client
+
+I didn't actually see the header being used for the calls. However, in real world implementation an API token is used so that only
+ valid API calls are allowed. The API key is set in: $HOME/.secrets/sandbox_api_token
+
+data_api.py is used as a api client. The original proxy service is located at: https://api.manus.im/apiproxy.v1.ApiProxyService/CallApi but you can set it to localhost.
+
+In order to work with API you need to create a key (assuming there is actually authentication):
+
+```bash
+curl -X GET http://localhost:8330/healthz -H "x-sandbox-token: dummy_api_key"
+```
+
+But I don't see the token being used anywhere in code so it's possible that it's only being used on the proxy, but that's just a guess.
 
 ### Terminal API Endpoints
 

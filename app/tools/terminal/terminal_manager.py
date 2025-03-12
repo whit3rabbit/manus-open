@@ -18,9 +18,9 @@ from app.types.messages import (
     TerminalOutputMessageType,
     TerminalStatus
 )
-from base import DEFAULT_USER, DEFAULT_WORKING_DIR, IS_INSIDE_CONTAINER
-from expecter import MyExpecter
-from terminal_helpers import process_terminal_output, split_bash_commands
+from app.tools.base import DEFAULT_USER, DEFAULT_WORKING_DIR, IS_INSIDE_CONTAINER
+from app.tools.terminal.expecter import MyExpecter
+from app.tools.terminal.terminal_helpers import process_terminal_output, split_bash_commands
 
 # Constants for terminal configuration
 PS1 = '[CMD_BEGIN]\\n\\u@\\h:\\w\\n[CMD_END]'
