@@ -1,25 +1,33 @@
 # Use Python 3.11 slim image as the base
 FROM python:3.11-slim
 
-# Accept API key as build argument
-ARG API_KEY=dummy_api_key
-
 # Set default environment variables
 ENV RUNTIME_API_HOST=http://localhost
 ENV CHROME_INSTANCE_PATH=/usr/bin/chromium
-ENV SANDBOX_API_KEY=$API_KEY
+ENV HOME=/home/manus
 
 # Install Chromium for browser automation and clean up APT caches
 RUN apt-get update && \
     apt-get install -y chromium bash sudo && \
     rm -rf /var/lib/apt/lists/*
 
-# Create the target directory and set it as the working directory
-RUN mkdir -p /opt/.manus/.sandbox-runtime
+# Create a non-root user and add to sudoers
+RUN useradd -m -s /bin/bash manus && \
+    echo "manus ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/manus && \
+    chmod 0440 /etc/sudoers.d/manus
+
+# Create the target directory structure and set proper permissions
+RUN mkdir -p /opt/.manus/.sandbox-runtime && \
+    chown -R manus:manus /opt/.manus
+
+# Set working directory
 WORKDIR /opt/.manus/.sandbox-runtime
 
 # Copy the repository files into the container
-COPY . /opt/.manus/.sandbox-runtime/
+COPY --chown=manus:manus . /opt/.manus/.sandbox-runtime/
+
+# Switch to non-root user
+USER manus
 
 # Create a Python virtual environment in the working directory
 RUN python -m venv venv
@@ -28,10 +36,9 @@ RUN python -m venv venv
 RUN ./venv/bin/pip install --upgrade pip && \
     ./venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# Create the secrets directory and set the API key
+# Create the secrets directory with proper permissions
 RUN mkdir -p $HOME/.secrets && \
-    echo "$SANDBOX_API_KEY" > $HOME/.secrets/sandbox_api_token && \
-    chmod 600 $HOME/.secrets/sandbox_api_token
+    chmod 700 $HOME/.secrets
 
 # Expose the internal API port
 EXPOSE 8330
