@@ -40,16 +40,13 @@ async def upload_to_presigned_url(data, presigned_url, content_type, filename):
     '''
     headers = {
         'Content-Type': content_type,
-        'Content-Disposition': f'attachment; filename="{quote(filename)}"'
+        'Content-Disposition': f"attachment; filename*=UTF-8''{quote(filename)}"
     }
     
-    # Create a ClientSession
     async with aiohttp.ClientSession() as session:
         try:
-            # Upload the file
             async with session.put(presigned_url, data=data, headers=headers) as response:
-                # Check if upload was successful
-                if response.status >= 200 and response.status < 300:
+                if 200 <= response.status < 300:
                     logger.info(f"Successfully uploaded {filename} to {presigned_url}")
                     return {'success': True, 'status': response.status}
                 else:
@@ -74,10 +71,8 @@ async def upload_part(session, url, data, part_number):
         PartUploadResult: Result of the upload operation
     '''
     try:
-        # Upload the part
         async with session.put(url, data=data, headers={'Content-Type': 'application/octet-stream'}) as response:
-            if response.status >= 200 and response.status < 300:
-                # Get the ETag from headers (needed for completing multipart upload)
+            if 200 <= response.status < 300:
                 etag = response.headers.get('ETag', '').strip('"')
                 return PartUploadResult(
                     part_number=part_number,
@@ -136,31 +131,22 @@ async def upload_file_parts(file_path, presigned_urls: List[PresignedUrlPart], p
     Returns:
         List[PartUploadResult]: Results of all part uploads
     '''
-    # Validate inputs
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
     
     if not presigned_urls:
         raise ValueError("No presigned URLs provided")
     
-    # Sort URLs by part number to ensure proper order
     sorted_urls = sorted(presigned_urls, key=lambda x: x.part_number)
-    
-    # Set up asyncio semaphore to limit concurrent uploads
     semaphore = asyncio.Semaphore(max_concurrent)
     
     async def upload_part_with_semaphore(session, url_obj: PresignedUrlPart):
-        # Use semaphore to limit concurrency
         async with semaphore:
             try:
                 part_number = url_obj.part_number
                 url = url_obj.url
-                
-                # Read the part data
                 async with FilePartReader(file_path, part_size) as reader:
                     data = reader.read_part(part_number)
-                    
-                    # Upload the part
                     result = await upload_part(session, url, data, part_number)
                     return result
             except Exception as e:
@@ -171,16 +157,9 @@ async def upload_file_parts(file_path, presigned_urls: List[PresignedUrlPart], p
                     error=str(e)
                 )
     
-    # Create a session for all requests
     async with aiohttp.ClientSession() as session:
-        # Create tasks for uploading all parts
         tasks = [upload_part_with_semaphore(session, url_obj) for url_obj in sorted_urls]
-        
-        # Wait for all tasks to complete
         results = await asyncio.gather(*tasks)
-        
-        # Log summary
         success_count = sum(1 for r in results if r.success)
         logger.info(f"Multipart upload completed: {success_count}/{len(results)} parts successful")
-        
         return results

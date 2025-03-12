@@ -69,7 +69,7 @@ class HelperJs:
         elements.forEach((el, index) => {
             // Check if element is visible
             const rect = el.getBoundingClientRect();
-            const isVisible = !!(rect.width && rect.height && 
+            const isVisible = !!(rect.width && rect.height &&
                 window.getComputedStyle(el).getPropertyValue('display') !== 'none' &&
                 window.getComputedStyle(el).getPropertyValue('visibility') !== 'hidden');
                 
@@ -119,7 +119,7 @@ class HelperJs:
         elements.forEach((el, index) => {
             // Check if element is visible
             const rect = el.getBoundingClientRect();
-            const isVisible = !!(rect.width && rect.height && 
+            const isVisible = !!(rect.width && rect.height &&
                 window.getComputedStyle(el).getPropertyValue('display') !== 'none' &&
                 window.getComputedStyle(el).getPropertyValue('visibility') !== 'hidden');
                 
@@ -188,31 +188,31 @@ class HelperJs:
         
         // Override console methods to capture logs
         console.log = function() {
-            window.__consoleLogs.push(["LOG", ...arguments].map(arg => 
+            window.__consoleLogs.push(["LOG", ...arguments].map(arg =>
                 typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(" "));
             return originalConsole.log.apply(console, arguments);
         };
         
         console.info = function() {
-            window.__consoleLogs.push(["INFO", ...arguments].map(arg => 
+            window.__consoleLogs.push(["INFO", ...arguments].map(arg =>
                 typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(" "));
             return originalConsole.info.apply(console, arguments);
         };
         
         console.warn = function() {
-            window.__consoleLogs.push(["WARN", ...arguments].map(arg => 
+            window.__consoleLogs.push(["WARN", ...arguments].map(arg =>
                 typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(" "));
             return originalConsole.warn.apply(console, arguments);
         };
         
         console.error = function() {
-            window.__consoleLogs.push(["ERROR", ...arguments].map(arg => 
+            window.__consoleLogs.push(["ERROR", ...arguments].map(arg =>
                 typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(" "));
             return originalConsole.error.apply(console, arguments);
         };
         
         console.debug = function() {
-            window.__consoleLogs.push(["DEBUG", ...arguments].map(arg => 
+            window.__consoleLogs.push(["DEBUG", ...arguments].map(arg =>
                 typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(" "));
             return originalConsole.debug.apply(console, arguments);
         };
@@ -220,6 +220,19 @@ class HelperJs:
         return "Console logging initialized.";
     })();
     """
+
+# Read additional JavaScript helpers from files in JS_DIR
+try:
+    select_option = pathlib.Path(JS_DIR, "selectOption.js").read_text()
+except Exception as e:
+    logger.error(f"Error reading selectOption.js: {e}")
+    select_option = ""
+
+try:
+    get_viewport = pathlib.Path(JS_DIR, "getViewport.js").read_text()
+except Exception as e:
+    logger.error(f"Error reading getViewport.js: {e}")
+    get_viewport = ""
 
 def screenshot_to_data_url(screenshot):
     '''将 base64 编码的截图转换为 data URL 格式 (Convert base64 encoded screenshot to data URL format)'''
@@ -257,4 +270,4 @@ def check_file_path(file_path):
         return None
     except Exception as e:
         logger.error(f"Error creating directory for file {file_path}: {e}")
-        return ActionResult(error=f'Unable to create directory: {str(e)}', include_in_memory=True)
+        return ActionResult(error=f'Failed to create directory for {file_path}: {str(e)}', include_in_memory=True)

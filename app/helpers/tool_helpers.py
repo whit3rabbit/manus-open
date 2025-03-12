@@ -1,71 +1,73 @@
 '''Utility to run shell commands asynchronously with a timeout.'''
 import asyncio
+from typing import Optional, Tuple
 from app.logger import logger
 
-TRUNCATED_MESSAGE: str = '<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>'
+TRUNCATED_MESSAGE: str = (
+    '<response clipped><NOTE>To save on context only part of this file has been shown to you. '
+    'You should retry this tool after you have searched inside the file with `grep -n` in order to '
+    'find the line numbers of what you are looking for.</NOTE>'
+)
 MAX_RESPONSE_LEN: int = 16000
 
-def maybe_truncate(content, truncate_after):
+def maybe_truncate(content: str, truncate_after: Optional[int]) -> str:
     '''Truncate content and append a notice if content exceeds the specified length.'''
-    return content if truncate_after is None or len(content) <= truncate_after else content[:truncate_after] + TRUNCATED_MESSAGE
+    if truncate_after is None or len(content) <= truncate_after:
+        return content
+    return content[:truncate_after] + TRUNCATED_MESSAGE
 
-async def run_shell(cmd, timeout=30, truncate_after=None, input=None):
+async def run_shell(cmd: str, timeout: float = 30, truncate_after: Optional[int] = None, input: Optional[str] = None) -> Tuple[int, str, str]:
     '''
     Run a shell command asynchronously with a timeout.
     
     Args:
-        cmd: The shell command to run
-        timeout: Maximum execution time in seconds (default: 30)
-        truncate_after: Maximum length of output before truncation (default: None)
-        input: Optional input to send to the command's stdin
+        cmd: The shell command to run.
+        timeout: Maximum execution time in seconds (default: 30).
+        truncate_after: Maximum length of output before truncation (default: None).
+        input: Optional input to send to the command's stdin.
         
     Returns:
         Tuple[int, str, str]: (return_code, stdout, stderr)
+        
+    Raises:
+        asyncio.TimeoutError: If the command exceeds the specified timeout.
     '''
-    logger.debug(f"Running shell command: {cmd}")
+    logger.info(f"Running command: {cmd}")
     
     try:
-        # Create process
+        # Create the subprocess, sending input only if provided
         process = await asyncio.create_subprocess_shell(
             cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.PIPE if input else None
+            stdin=asyncio.subprocess.PIPE if input is not None else None
         )
         
-        # Set up timeout
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 process.communicate(input=input.encode() if input else None),
                 timeout=timeout
             )
-        except asyncio.TimeoutError:
-            # Kill the process if it takes too long
+        except asyncio.TimeoutError as e:
             logger.warning(f"Command timed out after {timeout} seconds: {cmd}")
             try:
-                process.terminate()
-                await asyncio.sleep(0.1)
-                if process.returncode is None:
-                    process.kill()
-            except Exception as e:
-                logger.error(f"Error killing process: {e}")
-            return (124, "", f"Command timed out after {timeout} seconds")
+                process.kill()
+            except Exception as kill_exc:
+                logger.error(f"Error killing process: {kill_exc}")
+            raise asyncio.TimeoutError(f"Command '{cmd}' timed out after {timeout} seconds") from e
         
-        # Get the return code
         return_code = process.returncode or 0
-        
-        # Decode output
         stdout = stdout_bytes.decode('utf-8', errors='replace')
         stderr = stderr_bytes.decode('utf-8', errors='replace')
         
-        # Truncate if necessary
+        # Truncate the output if a truncation limit is provided
         if truncate_after is not None:
             stdout = maybe_truncate(stdout, truncate_after)
             stderr = maybe_truncate(stderr, truncate_after)
         
-        logger.debug(f"Command completed with return code {return_code}")
-        return (return_code, stdout, stderr)
+        logger.info(f"Command completed with return code {return_code}")
+        return return_code, stdout, stderr
         
     except Exception as e:
         logger.error(f"Error running shell command: {e}")
-        return (1, "", f"Error running command: {str(e)}")
+        return 1, "", f"Error running command: {e}"
