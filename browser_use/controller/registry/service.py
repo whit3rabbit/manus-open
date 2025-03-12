@@ -1,27 +1,15 @@
 import asyncio
 from inspect import iscoroutinefunction, signature
-from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar
-
+from typing import Any, Callable, Dict, Optional, Type
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, Field, create_model
-
 from browser_use.browser.context import BrowserContext
-from browser_use.controller.registry.views import (
-    ActionModel,
-    ActionRegistry,
-    RegisteredAction,
-)
+from browser_use.controller.registry.views import ActionModel, ActionRegistry, RegisteredAction
 from browser_use.telemetry.service import ProductTelemetry
-from browser_use.telemetry.views import (
-    ControllerRegisteredFunctionsTelemetryEvent,
-    RegisteredFunction,
-)
-from browser_use.utils import time_execution_async, time_execution_sync
-
-Context = TypeVar('Context')
+from browser_use.telemetry.views import ControllerRegisteredFunctionsTelemetryEvent, RegisteredFunction
 
 
-class Registry(Generic[Context]):
+class Registry:
     """Service for registering and managing actions"""
 
     def __init__(self, exclude_actions: list[str] | None = None):
@@ -29,7 +17,6 @@ class Registry(Generic[Context]):
         self.telemetry = ProductTelemetry()
         self.exclude_actions = exclude_actions if exclude_actions is not None else []
 
-    @time_execution_sync('--create_param_model')
     def _create_param_model(self, function: Callable) -> Type[BaseModel]:
         """Creates a Pydantic model from function signature"""
         sig = signature(function)
@@ -85,7 +72,6 @@ class Registry(Generic[Context]):
 
         return decorator
 
-    @time_execution_async('--execute_action')
     async def execute_action(
         self,
         action_name: str,
@@ -94,7 +80,7 @@ class Registry(Generic[Context]):
         page_extraction_llm: Optional[BaseChatModel] = None,
         sensitive_data: Optional[Dict[str, str]] = None,
         available_file_paths: Optional[list[str]] = None,
-        context: Context | None = None,
+        context=None,
     ) -> Any:
         """Execute a registered action"""
         if action_name not in self.registry.actions:
@@ -169,7 +155,6 @@ class Registry(Generic[Context]):
             params.__dict__[key] = replace_secrets(value)
         return params
 
-    @time_execution_sync('--create_action_model')
     def create_action_model(self, include_actions: Optional[list[str]] = None) -> Type[ActionModel]:
         """Creates a Pydantic model from registered actions"""
         fields = {

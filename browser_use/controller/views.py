@@ -18,11 +18,12 @@ class InputTextAction(BaseModel):
     xpath: Optional[str] = None
 
 class ExtractPageContentAction(BaseModel):
-    value: str
+    # This class doesn't have fields in the bytecode
+    # It appears to be a model with no required fields
+    pass
 
 class DoneAction(BaseModel):
     text: str
-    success: bool = True
 
 class SwitchTabAction(BaseModel):
     page_id: int
@@ -31,7 +32,7 @@ class OpenTabAction(BaseModel):
     url: str
 
 class ScrollAction(BaseModel):
-    amount: Optional[int] = None  # The number of pixels to scroll. If None, scroll down/up one page
+    amount: Optional[int] = None
 
 class SendKeysAction(BaseModel):
     keys: str
@@ -47,6 +48,4 @@ class NoParamsAction(BaseModel):
         return {}
     
     class Config:
-        # If you want to silently allow unknown fields at top-level,
-        # set extra = 'allow' as well:
         extra = 'allow'

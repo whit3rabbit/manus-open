@@ -1,7 +1,6 @@
 from typing import Callable, Dict, Type
 from pydantic import BaseModel, ConfigDict
 
-
 class RegisteredAction(BaseModel):
     """Model for a registered action"""
     name: str
@@ -14,34 +13,34 @@ class RegisteredAction(BaseModel):
     def prompt_description(self) -> str:
         """Get a description of the action for the prompt"""
         skip_keys = ['title']
-        s = f'{self.description}: \n'
-        s += '{' + str(self.name) + ': '
-        s += str(
+        description_text = f'{self.description}: \n'
+        description_text += '{' + str(self.name) + ': '
+        description_text += str(
             {
-                k: {sub_k: sub_v for sub_k, sub_v in v.items() if sub_k not in skip_keys}
-                for k, v in self.param_model.schema()['properties'].items()
+                param_name: {field_key: field_value for field_key, field_value in param_details.items() 
+                            if field_key not in skip_keys}
+                for param_name, param_details in self.param_model.schema()['properties'].items()
             }
         )
-        s += '}'
-        return s
+        description_text += '}'
+        return description_text
 
 
 class ActionModel(BaseModel):
     """Base model for dynamically created action models"""
-    # this will have all the registered actions, e.g.
-    # click_element = param_model = ClickElementParams
-    # done = param_model = None
+    # This class will have all the registered actions dynamically added
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
     def get_index(self) -> int | None:
         """Get the index of the action"""
-        # {'clicked_element': {'index':5}}
-        params = self.model_dump(exclude_unset=True).values()
-        if not params:
+        # Looks for an 'index' value in any of the action parameters
+        # Example data shape: {'clicked_element': {'index': 5}}
+        parameters = self.model_dump(exclude_unset=True).values()
+        if not parameters:
             return None
         
-        for param in params:
+        for param in parameters:
             if param is not None and 'index' in param:
                 return param['index']
         return None

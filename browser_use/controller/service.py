@@ -5,6 +5,9 @@ from typing import Callable, Dict, Generic, Optional, Type, TypeVar
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel
+import json
+import lmnr
+from lmnr import Laminar, observe
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser.context import BrowserContext
@@ -61,7 +64,7 @@ class Controller(Generic[Context]):
                 param_model=DoneAction,
             )
             async def done(params: DoneAction):
-                return ActionResult(is_done=True, success=params.success, extracted_content=params.text)
+                return ActionResult(is_done=True, extracted_content=params.text)
 
         # Basic Navigation Actions
         @self.registry.action(
@@ -239,7 +242,7 @@ class Controller(Generic[Context]):
 
         # send keys
         @self.registry.action(
-            'Send strings of special keys like Escape,Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press. ',
+            'Send strings of special keys like Escape,Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press.',
             param_model=SendKeysAction,
         )
         async def send_keys(params: SendKeysAction, browser: BrowserContext):
@@ -506,3 +509,50 @@ class Controller(Generic[Context]):
             return ActionResult()
         except Exception as e:
             raise e
+
+    @observe(name='controller.multi_act')
+    @time_execution_async('--multi-act')
+    async def multi_act(
+        self,
+        actions: list[ActionModel],
+        browser_context: BrowserContext,
+        check_break_if_paused: Callable[[], bool],
+        check_for_new_elements: bool = True,
+        page_extraction_llm: Optional[BaseChatModel] = None,
+        sensitive_data: Optional[Dict[str, str]] = None,
+    ) -> list[ActionResult]:
+        """Execute multiple actions"""
+        results = []
+        session = await browser_context.get_session()
+        selector_map = session.cached_state.selector_map
+        initial_hash_set = set(dom.hash.branch_path_hash for dom in selector_map.values())
+
+        check_break_if_paused()
+
+        for i, action in enumerate(actions):
+            logger.info(f'executing action {i}')
+            
+            check_break_if_paused()
+            
+            if action.get_index() is not None and i != 0:
+                current_state = await browser_context.get_state()
+                current_hash_set = set(dom.hash.branch_path_hash for dom in current_state.selector_map.values())
+                
+                if check_for_new_elements and not current_hash_set.issubset(initial_hash_set):
+                    msg = f'Something new appeared after action {i} / {len(actions)}'
+                    logger.info(msg)
+                    results.append(ActionResult(extracted_content=msg, include_in_memory=True))
+                    break
+            
+            check_break_if_paused()
+            
+            results.append(await self.act(action, browser_context, page_extraction_llm, sensitive_data))
+            
+            logger.debug(f'Executed action {i + 1} / {len(actions)}')
+            
+            if results[-1].is_done or results[-1].error or i == len(actions) - 1:
+                break
+            
+            await asyncio.sleep(browser_context.config.wait_between_actions)
+        
+        return results
