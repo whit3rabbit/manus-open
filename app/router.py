@@ -1,9 +1,7 @@
 import time
 from typing import Callable
-
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
-
 from app.logger import logger
 
 class TimedRoute(APIRoute):
@@ -31,31 +29,27 @@ class TimedRoute(APIRoute):
             Returns:
                 Response: The HTTP response
             """
+            # Get the route path for logging
+            path = request.url.path
+            
+            # Log the request
+            logger.info(f"[>>] {request.method} {path}")
+            
             # Record the start time
             start_time = time.time()
             
-            # Get the route path for logging
-            route_path = request.url.path
-            method = request.method
+            # Process the request with the original handler
+            response = await original_route_handler(request)
             
-            try:
-                # Process the request with the original handler
-                response = await original_route_handler(request)
-                
-                # Calculate and log the processing time
-                process_time = time.time() - start_time
-                logger.info(f"{method} {route_path} completed in {process_time:.4f}s")
-                
-                # Add the processing time to response headers
-                response.headers["X-Process-Time"] = f"{process_time:.4f}"
-                
-                return response
-            except Exception as e:
-                # Log errors with timing information
-                process_time = time.time() - start_time
-                logger.error(f"{method} {route_path} failed after {process_time:.4f}s: {str(e)}")
-                raise
+            # Calculate the processing time (in milliseconds)
+            process_time = time.time() - start_time
+            
+            # Log the completion with time in milliseconds
+            logger.info(f"[<<] Finished handling {request.method} {path} in {process_time * 1000}ms")
+            
+            return response
             
         return custom_route_handler
 
+# Export the TimedRoute class
 __all__ = ['TimedRoute']

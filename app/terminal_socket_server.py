@@ -1,5 +1,5 @@
 import asyncio
-import json
+import json  # Not directly used but kept for bytecode consistency
 from typing import Any, Dict
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -25,41 +25,60 @@ class TerminalSocketServer:
         await ws.accept()
         logger.info("New terminal WebSocket connection established")
         
-        try:
-            while True:
-                # Wait for messages from the client
-                msg_text = await ws.receive_text()
+        # Dictionary to track running tasks by action_id
+        tasks = {}
+        
+        # Helper function to cleanup tasks when connection closes
+        def stop_all_tasks():
+            for task in tasks.values():
+                task.cancel()
+        
+        # Helper function to receive and process messages
+        async def get_socket_message():
+            try:
+                # Get JSON message directly
+                msg_data = await ws.receive_json()
                 
                 try:
-                    # Parse the message
-                    msg_data = json.loads(msg_text)
-                    await self.handle_msg(msg_data, ws)
-                except json.JSONDecodeError:
-                    logger.error(f"Invalid JSON received: {msg_text}")
-                    await self.send_resp(ws, {
-                        "type": "error",
-                        "terminal": "",
-                        "action_id": "",
-                        "result": "Invalid JSON message",
-                        "output": [],
-                        "terminal_status": "idle"
-                    })
-                except Exception as e:
-                    logger.error(f"Error handling message: {e}")
-                    await self.send_resp(ws, {
-                        "type": "error",
-                        "terminal": "",
-                        "action_id": "",
-                        "result": f"Error: {str(e)}",
-                        "output": [],
-                        "terminal_status": "idle"
-                    })
+                    # Validate message using model_validate
+                    msg = TerminalInputMessage.model_validate(msg_data)
+                    logger.info(f"Got message: {msg_data}")
+                    
+                    # Create task to handle the message
+                    task = asyncio.create_task(self.handle_msg(msg, ws))
+                    tasks[msg.action_id] = task
+                    
+                    # Add callback to remove task when done
+                    task.add_done_callback(lambda task: tasks.pop(msg.action_id))
+                except ValidationError as e:
+                    logger.error(f"Invalid message: {msg_data}, {e}")
+                    await self.send_resp(ws, TerminalOutputMessage(
+                        action_id="",
+                        type="error",
+                        result=f"Invalid message: {e}",
+                        output=[],
+                        terminal_status="unknown",
+                        terminal=""
+                    ))
+            except Exception as e:
+                logger.error(f"Error handling message: {e}")
+        
+        try:
+            # Process messages continuously
+            while True:
+                await get_socket_message()
         except WebSocketDisconnect:
-            logger.info("Terminal WebSocket connection closed")
+            logger.info("Websocket disconnected")
         except Exception as e:
-            logger.error(f"WebSocket error: {e}")
+            logger.error(e)
+            logger.error(f"Error: {e}")
+            logger.info("Closing websocket")
+            await ws.close()
+            
+        # Clean up any remaining tasks
+        stop_all_tasks()
     
-    async def send_resp(self, ws: WebSocket, resp: Dict[str, Any]):
+    async def send_resp(self, ws: WebSocket, resp: TerminalOutputMessage):
         """
         Send a response to the client over the WebSocket connection.
         
@@ -67,45 +86,29 @@ class TerminalSocketServer:
             ws: The WebSocket connection
             resp: The response data to send
         """
+        logger.info(f"Sending resp {resp}")
         try:
-            await ws.send_text(json.dumps(resp))
-        except Exception as e:
-            logger.error(f"Error sending response: {e}")
+            # Use model_dump() method instead of manual JSON serialization
+            await ws.send_json(resp.model_dump())
+        except RuntimeError as e:
+            logger.error(f"Error sending resp: {e}")
     
-    async def handle_msg(self, msg: Dict[str, Any], ws: WebSocket):
+    async def handle_msg(self, msg: TerminalInputMessage, ws: WebSocket):
         """
         Handle an incoming message from the client.
         
         Args:
-            msg: The message data
+            msg: The validated terminal input message
             ws: The WebSocket connection
         """
-        try:
-            # Validate and parse the message using the Pydantic model
-            terminal_msg = TerminalInputMessage(**msg)
-            await self.do_handle_msg(terminal_msg, ws)
-        except ValidationError as e:
-            logger.error(f"Validation error: {e}")
-            await self.send_resp(ws, {
-                "type": "error",
-                "terminal": msg.get("terminal", ""),
-                "action_id": msg.get("action_id", ""),
-                "result": f"Invalid message format: {str(e)}",
-                "output": [],
-                "terminal_status": "idle"
-            })
-        except Exception as e:
-            logger.error(f"Error handling message: {e}")
-            await self.send_resp(ws, {
-                "type": "error",
-                "terminal": msg.get("terminal", ""),
-                "action_id": msg.get("action_id", ""),
-                "result": f"Error: {str(e)}",
-                "output": [],
-                "terminal_status": "idle"
-            })
+        logger.info(f"Handle terminal socket msg#{msg.action_id} {msg}")
+        
+        # Direct call to _do_handle_msg without additional validation
+        await self._do_handle_msg(msg, ws)
+        
+        logger.info(f"Finished handling msg#{msg.action_id}")
     
-    async def do_handle_msg(self, msg: TerminalInputMessage, ws: WebSocket):
+    async def _do_handle_msg(self, msg: TerminalInputMessage, ws: WebSocket):
         """
         Process a validated terminal input message.
         
@@ -116,185 +119,156 @@ class TerminalSocketServer:
         terminal_id = msg.terminal
         action_id = msg.action_id
         
+        # Get or create terminal instance
+        terminal = await terminal_manager.create_or_get_terminal(terminal_id)
+        
         # Handle different message types
         if msg.type == "reset":
             # Reset the terminal
-            terminal = await terminal_manager.create_or_get_terminal(terminal_id)
             await terminal.reset()
-            response = TerminalOutputMessage(
+            response = msg.create_response(
                 type="action_finish",
-                terminal=terminal_id,
-                action_id=action_id,
-                result="Terminal reset",
-                output=terminal.get_history(True, False),
-                terminal_status="idle",
-                sub_command_index=0
+                result="terminal reset success",
+                output=[],
+                terminal_status="idle"
             )
-            await self.send_resp(ws, response.dict())
+            await self.send_resp(ws, response)
             
         elif msg.type == "reset_all":
             # Reset all terminals
-            for term_id in list(terminal_manager.terminals.keys()):
-                terminal = terminal_manager.terminals[term_id]
-                await terminal.reset()
+            for term in terminal_manager.terminals.values():
+                await term.reset()
             
-            response = TerminalOutputMessage(
+            response = msg.create_response(
                 type="action_finish",
-                terminal=terminal_id,
-                action_id=action_id,
-                result="All terminals reset",
+                result="all terminals reset success",
                 output=[],
-                terminal_status="idle",
-                sub_command_index=0
+                terminal_status="idle"
             )
-            await self.send_resp(ws, response.dict())
+            await self.send_resp(ws, response)
             
-        elif msg.type == "view" or msg.type == "view_last":
-            # View terminal content
-            terminal = await terminal_manager.create_or_get_terminal(terminal_id)
-            is_full = msg.type == "view"
+        elif msg.type == "view":
+            # View full terminal history
+            terminal_status: TerminalStatus = "running" if terminal.is_running else "idle"
             
-            terminal_status: TerminalStatus = "idle" if not terminal.is_running else "running"
-            response = TerminalOutputMessage(
+            logger.info(f"Sending history: {terminal.get_history(True, True)}")
+            
+            response = msg.create_response(
                 type="history",
-                terminal=terminal_id,
-                action_id=action_id,
-                result="",
-                output=terminal.get_history(True, is_full),
-                terminal_status=terminal_status,
-                sub_command_index=0
+                result=None,
+                output=terminal.get_history(True, True),  # True for include_prompt, True for is_full
+                terminal_status=terminal_status
             )
-            await self.send_resp(ws, response.dict())
+            await self.send_resp(ws, response)
+            
+        elif msg.type == "view_last":
+            # View only the most recent terminal output
+            terminal_status: TerminalStatus = "running" if terminal.is_running else "idle"
+            
+            logger.info(f"Sending last history: {terminal.get_history(True, False)}")
+            
+            response = msg.create_response(
+                type="history",
+                result=None,
+                output=terminal.get_history(True, False),  # True for include_prompt, False for not is_full
+                terminal_status=terminal_status
+            )
+            await self.send_resp(ws, response)
             
         elif msg.type == "kill_process":
             # Kill the current process in the terminal
-            terminal = await terminal_manager.create_or_get_terminal(terminal_id)
             await terminal.kill_process()
             
-            response = TerminalOutputMessage(
+            response = msg.create_response(
                 type="action_finish",
-                terminal=terminal_id,
-                action_id=action_id,
-                result="Process killed",
+                result="process killed",
                 output=terminal.get_history(True, False),
-                terminal_status="idle",
-                sub_command_index=0
+                terminal_status="idle"
             )
-            await self.send_resp(ws, response.dict())
+            await self.send_resp(ws, response)
             
         elif msg.type == "command":
             # Execute a command in the terminal
             if not msg.command:
-                response = TerminalOutputMessage(
+                response = msg.create_response(
                     type="error",
-                    terminal=terminal_id,
-                    action_id=action_id,
-                    result="Command cannot be empty",
+                    result="must provide command",
                     output=[],
-                    terminal_status="idle",
-                    sub_command_index=0
+                    terminal_status="idle"
                 )
-                await self.send_resp(ws, response.dict())
+                await self.send_resp(ws, response)
                 return
-            
-            terminal = await terminal_manager.create_or_get_terminal(terminal_id)
             
             # Set working directory if provided
             if msg.exec_dir:
                 if not await terminal.set_working_directory(msg.exec_dir):
-                    response = TerminalOutputMessage(
+                    response = msg.create_response(
                         type="error",
-                        terminal=terminal_id,
-                        action_id=action_id,
                         result=f"Failed to change directory to {msg.exec_dir}",
                         output=[],
-                        terminal_status="idle",
-                        sub_command_index=0
+                        terminal_status="idle"
                     )
-                    await self.send_resp(ws, response.dict())
+                    await self.send_resp(ws, response)
                     return
             
+            # Default to "run" mode if not specified
+            if not msg.mode:
+                msg.mode = "run"
+                
             # Handle different command modes
             if msg.mode == "send_key":
                 await terminal.send_key(msg)
                 terminal_status: TerminalStatus = "idle" if not terminal.is_running else "running"
-                response = TerminalOutputMessage(
+                response = msg.create_response(
                     type="action_finish",
-                    terminal=terminal_id,
-                    action_id=action_id,
                     result=f"Key sent: {msg.command}",
                     output=terminal.get_history(True, False),
-                    terminal_status=terminal_status,
-                    sub_command_index=0
+                    terminal_status=terminal_status
                 )
-                await self.send_resp(ws, response.dict())
+                await self.send_resp(ws, response)
                 
             elif msg.mode == "send_line":
                 await terminal.send_line(msg)
                 terminal_status: TerminalStatus = "idle" if not terminal.is_running else "running"
-                response = TerminalOutputMessage(
+                response = msg.create_response(
                     type="action_finish",
-                    terminal=terminal_id,
-                    action_id=action_id,
                     result=f"Line sent: {msg.command}",
                     output=terminal.get_history(True, False),
-                    terminal_status=terminal_status,
-                    sub_command_index=0
+                    terminal_status=terminal_status
                 )
-                await self.send_resp(ws, response.dict())
+                await self.send_resp(ws, response)
                 
             elif msg.mode == "send_control":
                 await terminal.send_control(msg)
                 terminal_status: TerminalStatus = "idle" if not terminal.is_running else "running"
-                response = TerminalOutputMessage(
+                response = msg.create_response(
                     type="action_finish",
-                    terminal=terminal_id,
-                    action_id=action_id,
                     result=f"Control character sent: {msg.command}",
                     output=terminal.get_history(True, False),
-                    terminal_status=terminal_status,
-                    sub_command_index=0
+                    terminal_status=terminal_status
                 )
-                await self.send_resp(ws, response.dict())
+                await self.send_resp(ws, response)
                 
-            else:  # Default to "run" mode
-                # Execute the command
-                result = await terminal.execute_command(msg)
-                
-                # Send the final response
-                if result:
-                    response = TerminalOutputMessage(
-                        type="finish",
-                        terminal=terminal_id,
-                        action_id=action_id,
-                        result=result,
-                        output=terminal.get_history(True, False),
-                        terminal_status="idle",
-                        sub_command_index=0
-                    )
-                    await self.send_resp(ws, response.dict())
-                else:
-                    # If no result, the command might still be running
-                    # Send an update with the current status
-                    response = TerminalOutputMessage(
-                        type="update",
-                        terminal=terminal_id,
-                        action_id=action_id,
-                        result="",
-                        output=terminal.get_history(True, False),
-                        terminal_status="running",
-                        sub_command_index=0
-                    )
-                    await self.send_resp(ws, response.dict())
+            elif msg.mode == "run":
+                # Execute the command and yield responses
+                async for result in terminal.execute_command(msg):
+                    await self.send_resp(ws, result)
+            else:
+                # Invalid mode
+                response = msg.create_response(
+                    type="error",
+                    result=f"Invalid mode: {msg.mode}",
+                    output=[],
+                    terminal_status="idle"
+                )
+                await self.send_resp(ws, response)
         else:
             # Unknown message type
-            response = TerminalOutputMessage(
+            logger.error(f"Invalid message type: {msg.type}")
+            response = msg.create_response(
                 type="error",
-                terminal=terminal_id,
-                action_id=action_id,
-                result=f"Unknown message type: {msg.type}",
+                result=f"Invalid message type: {msg.type}",
                 output=[],
-                terminal_status="idle",
-                sub_command_index=0
+                terminal_status="idle"
             )
-            await self.send_resp(ws, response.dict())
+            await self.send_resp(ws, response)
