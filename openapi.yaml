@@ -1,0 +1,363 @@
+openapi: 3.0.0
+info:
+  title: App API
+  version: "1.0.0"
+  description: >
+    This API provides endpoints for file uploads/downloads, browser actions, terminal interactions, text editor actions, 
+    sandbox initialization, health checks, and project zipping & uploading. The `/terminal` endpoint is a WebSocket 
+    endpoint for real-time terminal interactions.
+servers:
+  - url: http://localhost:8330
+paths:
+  /file/upload_to_s3:
+    post:
+      summary: Upload File to S3
+      description: >
+        Upload a file to S3. If the file size exceeds a predefined threshold, returns information to perform a multipart upload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                file_path:
+                  type: string
+                presigned_url:
+                  type: string
+              required:
+                - file_path
+                - presigned_url
+      responses:
+        '200':
+          description: Successful file upload or multipart upload info returned.
+        '404':
+          description: File not found.
+        '500':
+          description: Upload failed.
+  /file/multipart_upload_to_s3:
+    post:
+      summary: Multipart Upload to S3
+      description: Upload file parts using presigned URLs for multipart uploads.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MultipartUploadRequest'
+      responses:
+        '200':
+          description: All parts uploaded successfully.
+        '206':
+          description: Partial success with some parts failed.
+        '400':
+          description: Bad Request.
+        '500':
+          description: Server error.
+  /file:
+    get:
+      summary: Download File
+      description: Download a file from the specified path.
+      parameters:
+        - in: query
+          name: path
+          required: true
+          schema:
+            type: string
+          description: The file path to download.
+      responses:
+        '200':
+          description: File returned.
+        '404':
+          description: File not found.
+        '500':
+          description: Error serving file.
+  /request-download-attachments:
+    post:
+      summary: Batch Download Attachments
+      description: >
+        Batch download files from the specified URLs and optionally save them to a subfolder.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadRequest'
+      responses:
+        '200':
+          description: Batch download completed.
+        '500':
+          description: Error during download.
+  /browser/status:
+    get:
+      summary: Browser Status
+      description: Get the current status of the browser manager.
+      responses:
+        '200':
+          description: Browser status returned.
+  /browser/action:
+    post:
+      summary: Browser Action
+      description: Execute a browser action (e.g., navigation, interaction).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrowserActionRequest'
+      responses:
+        '200':
+          description: Browser action executed.
+  /text_editor:
+    post:
+      summary: Text Editor Action
+      description: Perform a text editor action such as opening or updating a file.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextEditorAction'
+      responses:
+        '200':
+          description: Text editor action result.
+        '500':
+          description: Error performing action.
+  /init-sandbox:
+    post:
+      summary: Initialize Sandbox Environment
+      description: >
+        Initialize the sandbox by writing provided secrets to the user's .secrets directory.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                secrets:
+                  type: object
+                  additionalProperties:
+                    type: string
+              required:
+                - secrets
+      responses:
+        '200':
+          description: Sandbox initialized.
+        '500':
+          description: Error processing secrets.
+  /healthz:
+    get:
+      summary: Health Check
+      description: Health check endpoint.
+      responses:
+        '200':
+          description: Service is healthy.
+  /zip-and-upload:
+    post:
+      summary: Zip and Upload Directory
+      description: >
+        Zip a directory (excluding specified folders) and upload the resulting archive to S3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZipAndUploadRequest'
+      responses:
+        '200':
+          description: Project processed and uploaded.
+        '500':
+          description: Error during processing.
+  /terminal/{terminal_id}/reset:
+    post:
+      summary: Reset Terminal
+      description: Reset a specific terminal identified by terminal_id.
+      parameters:
+        - in: path
+          name: terminal_id
+          required: true
+          schema:
+            type: string
+          description: The terminal identifier.
+      responses:
+        '200':
+          description: Terminal reset successfully.
+        '500':
+          description: Error resetting terminal.
+  /terminal/reset-all:
+    post:
+      summary: Reset All Terminals
+      description: Reset all active terminals.
+      responses:
+        '200':
+          description: All terminals reset successfully.
+        '500':
+          description: Error resetting terminals.
+  /terminal/{terminal_id}/view:
+    get:
+      summary: View Terminal History
+      description: >
+        View the terminal history. Use the query parameter `full` to toggle between full history and only the latest output.
+      parameters:
+        - in: path
+          name: terminal_id
+          required: true
+          schema:
+            type: string
+          description: The terminal identifier.
+        - in: query
+          name: full
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: If true, returns full history; otherwise, returns only the last output.
+      responses:
+        '200':
+          description: Terminal history returned.
+        '500':
+          description: Error viewing history.
+  /terminal/{terminal_id}/kill:
+    post:
+      summary: Kill Terminal Process
+      description: Kill the current process running in the specified terminal.
+      parameters:
+        - in: path
+          name: terminal_id
+          required: true
+          schema:
+            type: string
+          description: The terminal identifier.
+      responses:
+        '200':
+          description: Terminal process killed.
+        '500':
+          description: Error killing process.
+  /terminal/{terminal_id}/write:
+    post:
+      summary: Write to Terminal
+      description: >
+        Write input to a terminal process (optionally simulating an "enter" key press).
+      parameters:
+        - in: path
+          name: terminal_id
+          required: true
+          schema:
+            type: string
+          description: The terminal identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminalWriteApiRequest'
+      responses:
+        '200':
+          description: Terminal write successful.
+        '500':
+          description: Error writing to terminal.
+  /terminal:
+    get:
+      summary: Terminal WebSocket Endpoint
+      description: >
+        Establish a WebSocket connection for real-time terminal interactions. 
+        **Note:** This is a WebSocket endpoint and not accessible via standard HTTP requests.
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket handshake successful).
+
+components:
+  schemas:
+    MultipartUploadRequest:
+      type: object
+      properties:
+        file_path:
+          type: string
+        presigned_urls:
+          type: array
+          items:
+            type: object
+            properties:
+              part_number:
+                type: integer
+              url:
+                type: string
+            required:
+              - part_number
+              - url
+        part_size:
+          type: integer
+      required:
+        - file_path
+        - presigned_urls
+        - part_size
+    DownloadItem:
+      type: object
+      properties:
+        url:
+          type: string
+        filename:
+          type: string
+      required:
+        - url
+        - filename
+    DownloadRequest:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/DownloadItem'
+        folder:
+          type: string
+      required:
+        - files
+    BrowserActionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+        url:
+          type: string
+      required:
+        - action
+        - url
+    TextEditorAction:
+      type: object
+      properties:
+        action:
+          type: string
+        file_path:
+          type: string
+        content:
+          type: string
+      required:
+        - action
+        - file_path
+    TerminalWriteApiRequest:
+      type: object
+      properties:
+        text:
+          type: string
+        enter:
+          type: boolean
+      required:
+        - text
+    ZipAndUploadRequest:
+      type: object
+      properties:
+        directory:
+          type: string
+        upload_url:
+          type: string
+        project_type:
+          type: string
+          enum:
+            - frontend
+            - backend
+            - nextjs
+      required:
+        - directory
+        - upload_url
+        - project_type
