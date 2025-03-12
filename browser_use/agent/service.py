@@ -164,20 +164,20 @@ class Agent:
 	def _set_version_and_source(self):
 		try:
 			import pkg_resources
-			_var_var_1 = pkg_resources.get_distribution('browser-use').version
-			_var_var_2 = 'pip'
+			version = pkg_resources.get_distribution('browser-use').version
+			source = 'pip'
 		except Exception:
 			try:
 				import subprocess
-				_var_var_1 = subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
-				_var_var_2 = 'git'
+				version = subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
+				source = 'git'
 			except Exception:
-				_var_var_1 = 'unknown'
-				_var_var_2 = 'unknown'
+				version = 'unknown'
+				source = 'unknown'
 				
-		logger.debug(f'Version: {_var_var_1}, Source: {_var_var_2}')
-		self.version = _var_var_1
-		self.source = _var_var_2
+		logger.debug(f'Version: {version}, Source: {source}')
+		self.version = version
+		self.source = source
 		
 	def _set_model_names(self):
 		self.chat_model_library = self.llm.__class__.__name__
@@ -326,35 +326,35 @@ class Agent:
 		
 	def _make_history_item(self, model_output: AgentOutput | None, state: BrowserState, result: list[ActionResult]):
 		"""Create and store history item"""
-		_var_var_16 = None
-		_var_var_17 = len(result)
+		interacted_elements = None
+		num_results = len(result)
 		
 		if model_output:
-			_var_var_18 = AgentHistory.get_interacted_element(model_output, state.selector_map)
+			interacted_elements = AgentHistory.get_interacted_element(model_output, state.selector_map)
 		else:
-			_var_var_18 = [None]
+			interacted_elements = [None]
 			
-		_var_var_19 = BrowserStateHistory(
+		browser_state_history = BrowserStateHistory(
 			url=state.url, 
 			title=state.title, 
 			tabs=state.tabs, 
-			interacted_element=_var_var_18, 
+			interacted_element=interacted_elements, 
 			screenshot=''
 		)
 		
-		_var_var_20 = AgentHistory(
+		history_item = AgentHistory(
 			model_output=model_output, 
 			result=result, 
-			state=_var_var_19
+			state=browser_state_history
 		)
 		
-		self.history.history.append(_var_var_20)
+		self.history.history.append(history_item)
 		
-	THINK_TAGS = re.compile('<think>.*?</think>', re.DOTALL)
+	THINK_TAGS_REGEX = re.compile('<think>.*?</think>', re.DOTALL)
 	
 	def _remove_think_tags(self, text: str) -> str:
 		"""Remove think tags from text"""
-		return re.sub(self.THINK_TAGS, '', text)
+		return re.sub(self.THINK_TAGS_REGEX, '', text)
 		
 	def _convert_input_messages(self, input_messages: list[BaseMessage], model_name: Optional[str]) -> list[BaseMessage]:
 		"""Convert input messages to a format that is compatible with the planner model"""
@@ -377,49 +377,49 @@ class Agent:
 		
 		# Handle raw text completion models
 		if self.model_name == 'deepseek-reasoner' or self.model_name.startswith('deepseek-r1'):
-			_var_var_23 = self.llm.invoke(input_messages)
-			_var_var_23.content = self._remove_think_tags(_var_var_23.content)
+			model_response = self.llm.invoke(input_messages)
+			model_response.content = self._remove_think_tags(model_response.content)
 			
 			try:
-				_var_var_24 = self.message_manager.extract_json_from_model_output(_var_var_23.content)
-				_var_var_25 = self.AgentOutput(**_var_var_24)
+				extracted_json = self.message_manager.extract_json_from_model_output(model_response.content)
+				parsed_output = self.AgentOutput(**extracted_json)
 			except (ValueError, ValidationError) as e:
-				logger.warning(f'Failed to parse model output: {_var_var_23} {str(e)}')
+				logger.warning(f'Failed to parse model output: {model_response} {str(e)}')
 				raise ValueError('Could not parse response.')
 				
 		# Handle structured output with function calling
 		elif self.tool_calling_method is not None:
-			_var_var_26 = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
-			_var_var_27 = await _var_var_26.ainvoke(input_messages)
-			_var_var_25 = _var_var_27['parsed']
+			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
+			response = await structured_llm.ainvoke(input_messages)
+			parsed_output = response['parsed']
 			
 		else:
-			_var_var_26 = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
-			_var_var_27 = await _var_var_26.ainvoke(input_messages)
-			_var_var_25 = _var_var_27['parsed']
+			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
+			response = await structured_llm.ainvoke(input_messages)
+			parsed_output = response['parsed']
 			
-		if _var_var_25 is None:
+		if parsed_output is None:
 			raise ValueError('Could not parse response.')
 			
 		# Limit the number of actions
-		_var_var_25.action = _var_var_25.action[:self.max_actions_per_step]
+		parsed_output.action = parsed_output.action[:self.max_actions_per_step]
 		
-		self._log_response(_var_var_25)
+		self._log_response(parsed_output)
 		self.n_steps += 1
 		
-		return _var_var_25
+		return parsed_output
 		
 	def _log_response(self, response: AgentOutput) -> None:
 		"""Log the model's response"""
 		if 'Success' in response.current_state.evaluation_previous_goal:
-			_var_var_28 = '👍'
+			emoji = '👍'
 		elif 'Failed' in response.current_state.evaluation_previous_goal:
-			_var_var_28 = '⚠'
+			emoji = '⚠'
 		else:
-			_var_var_28 = '🤷'
+			emoji = '🤷'
 			
-		logger.debug(f'🤖 {_var_var_28} Page summary: {response.current_state.page_summary}')
-		logger.info(f'{_var_var_28} Eval: {response.current_state.evaluation_previous_goal}')
+		logger.debug(f'🤖 {emoji} Page summary: {response.current_state.page_summary}')
+		logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 		logger.info(f'🧠 Memory: {response.current_state.memory}')
 		logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
 		
@@ -433,32 +433,32 @@ class Agent:
 			
 		os.makedirs(os.path.dirname(self.save_conversation_path), exist_ok=True)
 		
-		with open(self.save_conversation_path + f'_{self.n_steps}.txt', 'w', encoding=self.save_conversation_path_encoding) as f:
-			self._write_messages_to_file(f, input_messages)
-			self._write_response_to_file(f, response)
+		with open(self.save_conversation_path + f'_{self.n_steps}.txt', 'w', encoding=self.save_conversation_path_encoding) as file:
+			self._write_messages_to_file(file, input_messages)
+			self._write_response_to_file(file, response)
 			
-	def _write_messages_to_file(self, f, messages: list[BaseMessage]) -> None:
+	def _write_messages_to_file(self, file, messages: list[BaseMessage]) -> None:
 		"""Write messages to conversation file"""
-		for _var_var_32 in messages:
-			f.write(f' {_var_var_32.__class__.__name__} \n')
+		for message in messages:
+			file.write(f' {message.__class__.__name__} \n')
 			
-			if isinstance(_var_var_32.content, list):
-				for _var_var_33 in _var_var_32.content:
-					if isinstance(_var_var_33, dict) and _var_var_33.get('type') == 'text':
-						f.write(_var_var_33['text'].strip() + '\n')
-			elif isinstance(_var_var_32.content, str):
+			if isinstance(message.content, list):
+				for content_item in message.content:
+					if isinstance(content_item, dict) and content_item.get('type') == 'text':
+						file.write(content_item['text'].strip() + '\n')
+			elif isinstance(message.content, str):
 				try:
-					_var_var_34 = json.loads(_var_var_32.content)
-					f.write(json.dumps(_var_var_34, indent=2) + '\n')
+					parsed_content = json.loads(message.content)
+					file.write(json.dumps(parsed_content, indent=2) + '\n')
 				except json.JSONDecodeError:
-					f.write(_var_var_32.content.strip() + '\n')
+					file.write(message.content.strip() + '\n')
 					
-			f.write('\n')
+			file.write('\n')
 			
-	def _write_response_to_file(self, f, response: Any) -> None:
+	def _write_response_to_file(self, file, response: Any) -> None:
 		"""Write model response to conversation file"""
-		f.write(' RESPONSE\n')
-		f.write(json.dumps(json.loads(response.model_dump_json(exclude_unset=True)), indent=2))
+		file.write(' RESPONSE\n')
+		file.write(json.dumps(json.loads(response.model_dump_json(exclude_unset=True)), indent=2))
 		
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""
@@ -529,7 +529,7 @@ class Agent:
 			
 		except Exception:
 			# Ensure proper cleanup on exception
-			actions = [a.model_dump(exclude_unset=True) for a in model_output.action] if model_output else []
+			actions = [action.model_dump(exclude_unset=True) for action in model_output.action] if model_output else []
 			
 			self.telemetry.capture(
 				AgentStepTelemetryEvent(
@@ -548,7 +548,7 @@ class Agent:
 			
 		finally:
 			# Capture telemetry
-			actions = [a.model_dump(exclude_unset=True) for a in model_output.action] if model_output else []
+			actions = [action.model_dump(exclude_unset=True) for action in model_output.action] if model_output else []
 			
 			self.telemetry.capture(
 				AgentEndTelemetryEvent(
@@ -630,15 +630,15 @@ class Agent:
 			
 		validator = self.llm.with_structured_output(ValidationResult, include_raw=True)
 		response = await validator.ainvoke(messages)
-		parsed = response['parsed']
+		parsed_result = response['parsed']
 		
-		is_valid = parsed.is_valid
+		is_valid = parsed_result.is_valid
 		if not is_valid:
-			logger.info(f'❌ Validator decision: {parsed.reason}')
-			message = f'The output is not yet correct. {parsed.reason}.'
+			logger.info(f'❌ Validator decision: {parsed_result.reason}')
+			message = f'The output is not yet correct. {parsed_result.reason}.'
 			self._last_result = [ActionResult(extracted_content=message, include_in_memory=True)]
 		else:
-			logger.info(f'✅ Validator decision: {parsed.reason}')
+			logger.info(f'✅ Validator decision: {parsed_result.reason}')
 			
 		return is_valid
 		
@@ -671,22 +671,22 @@ class Agent:
 			)
 			self._last_result = result
 			
-		_var_var_42 = []
+		results = []
 		
-		for i, _var_var_20 in enumerate(history.history):
-			goal = _var_var_20.model_output.current_state.next_goal if _var_var_20.model_output else ''
+		for i, history_item in enumerate(history.history):
+			goal = history_item.model_output.current_state.next_goal if history_item.model_output else ''
 			logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
 			
-			if not _var_var_20.model_output or not _var_var_20.model_output.action or _var_var_20.model_output.action == [None]:
+			if not history_item.model_output or not history_item.model_output.action or history_item.model_output.action == [None]:
 				logger.warning(f'Step {i + 1}: No action to replay, skipping')
-				_var_var_42.append(ActionResult(error='No action to replay'))
+				results.append(ActionResult(error='No action to replay'))
 				continue
 				
 			retry_count = 0
 			while retry_count < max_retries:
 				try:
-					result = await self._execute_history_step(_var_var_20, delay_between_actions)
-					_var_var_42.extend(result)
+					result = await self._execute_history_step(history_item, delay_between_actions)
+					results.extend(result)
 					break
 				except Exception as e:
 					retry_count += 1
@@ -694,13 +694,13 @@ class Agent:
 						error_msg = f'Step {i + 1} failed after {max_retries} attempts: {str(e)}'
 						logger.error(error_msg)
 						if not skip_failures:
-							_var_var_42.append(ActionResult(error=error_msg))
+							results.append(ActionResult(error=error_msg))
 							raise RuntimeError(error_msg)
 					else:
 						logger.warning(f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...')
 						await asyncio.sleep(delay_between_actions)
 												
-		return _var_var_42
+		return results
 								
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
@@ -802,45 +802,45 @@ class Agent:
 			logger.warning('No history to create GIF from')
 			return None
 			
-		_var_var_50 = []
+		frames = []
 		
 		if not self.history.history or not self.history.history[0].state.screenshot:
 			logger.warning('No history or first screenshot to create GIF from')
 			return None
 			
 		# Try to find available fonts
-		_var_var_51 = ['Helvetica', 'Arial', 'DejaVuSans', 'Verdana']
-		_var_var_52 = False
+		font_names = ['Helvetica', 'Arial', 'DejaVuSans', 'Verdana']
+		font_found = False
 		
-		for _var_var_53 in _var_var_51:
+		for font_name in font_names:
 			try:
 				if platform.system() == 'Windows':
-					_var_var_53 = os.path.join(os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts'), _var_var_53 + '.ttf')
+					font_name = os.path.join(os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts'), font_name + '.ttf')
 					
-				_var_var_54 = ImageFont.truetype(_var_var_53, font_size)
-				_var_var_55 = ImageFont.truetype(_var_var_53, title_font_size)
-				_var_var_56 = ImageFont.truetype(_var_var_53, goal_font_size)
-				_var_var_52 = True
+				regular_font = ImageFont.truetype(font_name, font_size)
+				title_font = ImageFont.truetype(font_name, title_font_size)
+				goal_font = ImageFont.truetype(font_name, goal_font_size)
+				font_found = True
 				break
 			except OSError:
 				continue
 				
-		if not _var_var_52:
+		if not font_found:
 			try:
-				_var_var_54 = ImageFont.load_default()
-				_var_var_55 = ImageFont.load_default()
-				_var_var_56 = ImageFont.load_default()
+				regular_font = ImageFont.load_default()
+				title_font = ImageFont.load_default()
+				goal_font = ImageFont.load_default()
 			except OSError:
 				raise OSError('No preferred fonts found')
 				
 		# Try to load logo if enabled
-		_var_var_57 = None
+		logo_image = None
 		if show_logo:
 			try:
 				logo_path = os.path.join(os.path.dirname(__file__), 'assets/browser-use-logo.png')
 				if os.path.exists(logo_path):
-					_var_var_57 = Image.open(logo_path)
-					_var_var_57.thumbnail((150, 150))
+					logo_image = Image.open(logo_path)
+					logo_image.thumbnail((150, 150))
 			except Exception as e:
 				logger.warning(f'Could not load logo: {e}')
 				
@@ -849,12 +849,12 @@ class Agent:
 			task_frame = self._create_task_frame(
 				self.task,
 				self.history.history[0].state.screenshot,
-				_var_var_55,
-				_var_var_54,
-				_var_var_57,
+				title_font,
+				regular_font,
+				logo_image,
 				line_spacing
 			)
-			_var_var_50.append(task_frame)
+			frames.append(task_frame)
 			
 		# Create frames for each step
 		for i, history_item in enumerate(self.history.history[1:], 1):
@@ -862,10 +862,10 @@ class Agent:
 				continue
 				
 			# Decode screenshot
-			img_data = base64.b64decode(history_item.state.screenshot)
+			image_data = base64.b64decode(history_item.state.screenshot)
 			
 			# Open image
-			img = Image.open(io.BytesIO(img_data))
+			img = Image.open(io.BytesIO(image_data))
 			
 			# Add text overlay if goals are enabled
 			if show_goals and history_item.model_output:
@@ -873,20 +873,20 @@ class Agent:
 					image=img,
 					step_number=i,
 					goal_text=history_item.model_output.current_state.next_goal,
-					regular_font=_var_var_54,
-					title_font=_var_var_55,
+					regular_font=regular_font,
+					title_font=title_font,
 					margin=margin,
-					logo=_var_var_57
+					logo=logo_image
 				)
 				
-			_var_var_50.append(img)
+			frames.append(img)
 			
 		# Save as GIF
-		if _var_var_50:
-			_var_var_50[0].save(
+		if frames:
+			frames[0].save(
 				output_path,
 				save_all=True,
-				append_images=_var_var_50[1:],
+				append_images=frames[1:],
 				duration=duration,
 				loop=0,
 				optimize=False
@@ -906,55 +906,55 @@ class Agent:
 	) -> Image.Image:
 		"""Create initial frame showing the task."""
 		# Decode screenshot
-		_var_var_62 = base64.b64decode(first_screenshot)
-		_var_var_64 = Image.open(io.BytesIO(_var_var_62))
+		screenshot_data = base64.b64decode(first_screenshot)
+		screenshot_image = Image.open(io.BytesIO(screenshot_data))
 		
 		# Create black background
-		_var_var_63 = Image.new('RGB', _var_var_64.size, (0, 0, 0))
-		_var_var_65 = ImageDraw.Draw(_var_var_63)
+		background_image = Image.new('RGB', screenshot_image.size, (0, 0, 0))
+		draw = ImageDraw.Draw(background_image)
 		
 		# Position variables
-		_var_var_66 = _var_var_63.height // 2
-		_var_var_67 = 140
-		_var_var_68 = _var_var_63.width - 2 * _var_var_67
+		center_y = background_image.height // 2
+		margin_x = 140
+		text_width = background_image.width - 2 * margin_x
 		
 		# Create larger font for task title
-		_var_var_69 = ImageFont.truetype(regular_font.path, regular_font.size + 16)
+		task_title_font = ImageFont.truetype(regular_font.path, regular_font.size + 16)
 		
 		# Wrap text to fit width
-		_var_var_70 = self._wrap_text(task, _var_var_69, _var_var_68)
-		_var_var_71 = _var_var_69.size * line_spacing
-		_var_var_72 = _var_var_70.split('\n')
-		_var_var_73 = _var_var_71 * len(_var_var_72)
-		_var_var_74 = (_var_var_66 - _var_var_73 / 2) + 50
+		wrapped_text = self._wrap_text(task, task_title_font, text_width)
+		line_height = task_title_font.size * line_spacing
+		lines = wrapped_text.split('\n')
+		total_text_height = line_height * len(lines)
+		text_start_y = (center_y - total_text_height / 2) + 50
 		
 		# Draw each line of the task
-		for _var_var_75 in _var_var_72:
+		for line in lines:
 			# Calculate text width for centering
-			_var_var_76 = _var_var_65.textbbox((0, 0), _var_var_75, font=_var_var_69)
-			_var_var_77 = (_var_var_63.width - (_var_var_76[2] - _var_var_76[0])) // 2
+			text_bbox = draw.textbbox((0, 0), line, font=task_title_font)
+			text_start_x = (background_image.width - (text_bbox[2] - text_bbox[0])) // 2
 			
 			# Draw text
-			_var_var_65.text(
-				(_var_var_77, _var_var_74),
-				_var_var_75,
-				font=_var_var_69,
+			draw.text(
+				(text_start_x, text_start_y),
+				line,
+				font=task_title_font,
 				fill=(255, 255, 255)
 			)
 			
-			_var_var_74 += _var_var_71
+			text_start_y += line_height
 			
 		# Add logo if available
 		if logo:
-			_var_var_78 = 20
-			_var_var_79 = _var_var_63.width - logo.width - _var_var_78
-			_var_var_63.paste(
+			logo_margin = 20
+			logo_x = background_image.width - logo.width - logo_margin
+			background_image.paste(
 				logo,
-				(_var_var_79, _var_var_78),
+				(logo_x, logo_margin),
 				logo if 'A' in logo.getbands() else None
 			)
 			
-		return _var_var_63
+		return background_image
 		
 	def _add_overlay_to_image(
 		self,
@@ -972,58 +972,58 @@ class Agent:
 		"""Add step number and goal overlay to an image."""
 		# Convert to RGBA for transparency
 		image = image.convert('RGBA')
-		_var_var_80 = Image.new('RGBA', image.size, (0, 0, 0, 0))
-		_var_var_65 = ImageDraw.Draw(_var_var_80)
+		overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+		draw = ImageDraw.Draw(overlay)
 		
 		# Add step number if enabled
 		if display_step:
-			_var_var_81 = str(step_number)
-			_var_var_82 = _var_var_65.textbbox((0, 0), _var_var_81, font=title_font)
-			_var_var_83 = _var_var_82[2] - _var_var_82[0]
-			_var_var_84 = _var_var_82[3] - _var_var_82[1]
+			step_text = str(step_number)
+			step_bbox = draw.textbbox((0, 0), step_text, font=title_font)
+			step_width = step_bbox[2] - step_bbox[0]
+			step_height = step_bbox[3] - step_bbox[1]
 			
 			# Position for step number
-			_var_var_85 = margin + 10
-			_var_var_86 = image.height - margin - _var_var_84 - 10
-			_var_var_87 = 20
+			step_x = margin + 10
+			step_y = image.height - margin - step_height - 10
+			padding = 20
 			
 			# Background for step number
-			_var_var_88 = (
-				_var_var_85 - _var_var_87,
-				_var_var_86 - _var_var_87,
-				_var_var_85 + _var_var_83 + _var_var_87,
-				_var_var_86 + _var_var_84 + _var_var_87
+			step_background_bbox = (
+				step_x - padding,
+				step_y - padding,
+				step_x + step_width + padding,
+				step_y + step_height + padding
 			)
 			
-			_var_var_65.rounded_rectangle(_var_var_88, radius=15, fill=text_box_color)
-			_var_var_65.text((_var_var_85, _var_var_86), _var_var_81, font=title_font, fill=text_color)
+			draw.rounded_rectangle(step_background_bbox, radius=15, fill=text_box_color)
+			draw.text((step_x, step_y), step_text, font=title_font, fill=text_color)
 			
 		# Add goal text
-		_var_var_68 = image.width - 4 * margin
-		_var_var_89 = self._wrap_text(goal_text, title_font, _var_var_68)
+		text_width = image.width - 4 * margin
+		wrapped_text = self._wrap_text(goal_text, title_font, text_width)
 		
 		# Get text dimensions
-		_var_var_90 = _var_var_65.multiline_textbbox((0, 0), _var_var_89, font=title_font)
-		_var_var_91 = _var_var_90[2] - _var_var_90[0]
-		_var_var_92 = _var_var_90[3] - _var_var_90[1]
+		text_bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=title_font)
+		text_w = text_bbox[2] - text_bbox[0]
+		text_h = text_bbox[3] - text_bbox[1]
 		
 		# Position for goal text
-		_var_var_93 = (image.width - _var_var_91) // 2
-		_var_var_94 = _var_var_86 - _var_var_92 - _var_var_87 * 4
-		_var_var_95 = 25
+		text_x = (image.width - text_w) // 2
+		text_y = step_y - text_h - padding * 4  # Use variables from step number section
+		text_padding = 25
 		
 		# Background for goal text
-		_var_var_96 = (
-			_var_var_93 - _var_var_95,
-			_var_var_94 - _var_var_95,
-			_var_var_93 + _var_var_91 + _var_var_95,
-			_var_var_94 + _var_var_92 + _var_var_95
+		text_background_bbox = (
+			text_x - text_padding,
+			text_y - text_padding,
+			text_x + text_w + text_padding,
+			text_y + text_h + text_padding
 		)
 		
-		_var_var_65.rounded_rectangle(_var_var_96, radius=15, fill=text_box_color)
-		_var_var_65.multiline_text(
-			(_var_var_93, _var_var_94),
-			_var_var_89,
+		draw.rounded_rectangle(text_background_bbox, radius=15, fill=text_box_color)
+		draw.multiline_text(
+			(text_x, text_y),
+			wrapped_text,
 			font=title_font,
 			fill=text_color,
 			align='center'
@@ -1031,19 +1031,19 @@ class Agent:
 		
 		# Add logo if available
 		if logo:
-			_var_var_97 = Image.new('RGBA', image.size, (0, 0, 0, 0))
-			_var_var_78 = 20
-			_var_var_79 = image.width - logo.width - _var_var_78
-			_var_var_97.paste(
+			logo_overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+			logo_margin = 20
+			logo_x = image.width - logo.width - logo_margin
+			logo_overlay.paste(
 				logo,
-				(_var_var_79, _var_var_78),
+				(logo_x, logo_margin),
 				logo if logo.mode == 'RGBA' else None
 			)
-			_var_var_80 = Image.alpha_composite(_var_var_97, _var_var_80)
+			overlay = Image.alpha_composite(logo_overlay, overlay)
 			
 		# Composite the overlay with the original image
-		_var_var_6 = Image.alpha_composite(image, _var_var_80)
-		return _var_var_6.convert('RGB')
+		composite_image = Image.alpha_composite(image, overlay)
+		return composite_image.convert('RGB')
 		
 	def _wrap_text(self, text: str, font, max_width: int) -> str:
 		"""
@@ -1057,29 +1057,29 @@ class Agent:
 		Returns:
 			Wrapped text with newlines
 		"""
-		_var_var_98 = text.split()
-		_var_var_72 = []
-		_var_var_99 = []
+		words = text.split()
+		lines = []
+		current_line = []
 		
-		for _var_var_100 in _var_var_98:
-			_var_var_99.append(_var_var_100)
-			_var_var_75 = ' '.join(_var_var_99)
-			_var_var_101 = font.getbbox(_var_var_75)
+		for word in words:
+			current_line.append(word)
+			line_text = ' '.join(current_line)
+			line_bbox = font.getbbox(line_text)
 			
-			if _var_var_101[2] > max_width:
-				if len(_var_var_99) == 1:
+			if line_bbox[2] > max_width:
+				if len(current_line) == 1:
 					# Single word is too long, just add it anyway
-					_var_var_72.append(_var_var_99.pop())
+					lines.append(current_line.pop())
 				else:
 					# Remove last word and add the rest to wrapped lines
-					_var_var_99.pop()
-					_var_var_72.append(' '.join(_var_var_99))
-					_var_var_99 = [_var_var_100]
+					current_line.pop()
+					lines.append(' '.join(current_line))
+					current_line = [word]
 					
-		if _var_var_99:
-			_var_var_72.append(' '.join(_var_var_99))
+		if current_line:
+			lines.append(' '.join(current_line))
 			
-		return '\n'.join(_var_var_72)
+		return '\n'.join(lines)
 		
 	def _create_frame(
 		self,
@@ -1091,121 +1091,121 @@ class Agent:
 	) -> Image.Image:
 		"""Create a frame for the GIF with improved styling"""
 		# Create base image
-		_var_var_103 = Image.new('RGB', (width, height), 'white')
+		base_image = Image.new('RGB', (width, height), 'white')
 		
 		# Load screenshot
-		_var_var_104 = Image.open(BytesIO(base64.b64decode(screenshot)))
-		_var_var_104.thumbnail((width - 40, height - 160))
+		screenshot_image = Image.open(BytesIO(base64.b64decode(screenshot)))
+		screenshot_image.thumbnail((width - 40, height - 160))
 		
 		# Center screenshot
-		_var_var_105 = (width - _var_var_104.width) // 2
-		_var_var_106 = 120
-		_var_var_103.paste(_var_var_104, (_var_var_105, _var_var_106))
+		screenshot_x = (width - screenshot_image.width) // 2
+		screenshot_y = 120
+		base_image.paste(screenshot_image, (screenshot_x, screenshot_y))
 		
 		# Try to load logo
-		_var_var_107 = 100
-		_var_var_108 = os.path.join(os.path.dirname(__file__), 'assets/browser-use-logo.png')
+		logo_size = 100
+		logo_path = os.path.join(os.path.dirname(__file__), 'assets/browser-use-logo.png')
 		
-		if os.path.exists(_var_var_108):
-			_var_var_57 = Image.open(_var_var_108)
-			_var_var_57.thumbnail((_var_var_107, _var_var_107))
-			_var_var_103.paste(
-				_var_var_57,
-				(width - _var_var_107 - 20, 20),
-				_var_var_57 if 'A' in _var_var_57.getbands() else None
+		if os.path.exists(logo_path):
+			logo_image = Image.open(logo_path)
+			logo_image.thumbnail((logo_size, logo_size))
+			base_image.paste(
+				logo_image,
+				(width - logo_size - 20, 20),
+				logo_image if 'A' in logo_image.getbands() else None
 			)
 			
 		# Setup for drawing text
-		_var_var_65 = ImageDraw.Draw(_var_var_103)
+		draw = ImageDraw.Draw(base_image)
 		
 		try:
-			_var_var_55 = ImageFont.truetype('Arial.ttf', 36)
-			_var_var_102 = ImageFont.truetype('Arial.ttf', 24)
-			_var_var_109 = ImageFont.truetype('Arial.ttf', 48)
+			title_font = ImageFont.truetype('Arial.ttf', 36)
+			regular_font = ImageFont.truetype('Arial.ttf', 24)
+			step_number_font = ImageFont.truetype('Arial.ttf', 48)
 		except:
 			# Fallback to default fonts
-			_var_var_55 = ImageFont.load_default()
-			_var_var_102 = ImageFont.load_default()
-			_var_var_109 = ImageFont.load_default()
+			title_font = ImageFont.load_default()
+			regular_font = ImageFont.load_default()
+			step_number_font = ImageFont.load_default()
 			
 		# Text positioning
-		_var_var_67 = 80
-		_var_var_110 = width - 2 * _var_var_67
-		_var_var_111 = 20
+		margin_x = 80
+		text_width = width - 2 * margin_x
+		padding = 20
 		
 		# Wrap text
-		_var_var_112 = textwrap.wrap(text, width=60)
+		wrapped_text = textwrap.wrap(text, width=60)
 		
 		# Calculate text height
-		_var_var_113 = sum(
-			_var_var_65.textsize(_var_var_75, font=_var_var_102)[1]
-			for _var_var_75 in _var_var_112
+		total_text_height = sum(
+			draw.textsize(line, font=regular_font)[1]
+			for line in wrapped_text
 		)
 		
-		_var_var_114 = _var_var_113 + 2 * _var_var_111
+		text_area_height = total_text_height + 2 * padding
 		
 		# Create text area background
-		_var_var_115 = [
-			_var_var_67 - _var_var_111,
+		text_area_bbox = [
+			margin_x - padding,
 			40,
-			(width - _var_var_67) + _var_var_111,
-			40 + _var_var_114
+			(width - margin_x) + padding,
+			40 + text_area_height
 		]
 		
-		_var_var_65.rounded_rectangle(_var_var_115, radius=15, fill='#f0f0f0')
+		draw.rounded_rectangle(text_area_bbox, radius=15, fill='#f0f0f0')
 		
 		# Add small logo to text area
-		_var_var_116 = 30
-		if os.path.exists(_var_var_108):
-			_var_var_117 = Image.open(_var_var_108)
-			_var_var_117.thumbnail((_var_var_116, _var_var_116))
-			_var_var_103.paste(
-				_var_var_117,
-				((_var_var_67 - _var_var_111) + 10, 45),
-				_var_var_117 if 'A' in _var_var_117.getbands() else None
+		small_logo_size = 30
+		if os.path.exists(logo_path):
+			small_logo_image = Image.open(logo_path)
+			small_logo_image.thumbnail((small_logo_size, small_logo_size))
+			base_image.paste(
+				small_logo_image,
+				((margin_x - padding) + 10, 45),
+				small_logo_image if 'A' in small_logo_image.getbands() else None
 			)
 			
 		# Draw text
-		_var_var_118 = 50
-		for _var_var_75 in _var_var_112:
-			_var_var_65.text(
-				(_var_var_67 + _var_var_116 + 20, _var_var_118),
-				_var_var_75,
-				font=_var_var_102,
+		text_y = 50
+		for line in wrapped_text:
+			draw.text(
+				(margin_x + small_logo_size + 20, text_y),
+				line,
+				font=regular_font,
 				fill='black'
 			)
-			_var_var_118 += _var_var_65.textsize(_var_var_75, font=_var_var_102)[1] + 5
+			text_y += draw.textsize(line, font=regular_font)[1] + 5
 			
 		# Add step number
-		_var_var_119 = str(step_number)
-		_var_var_120 = _var_var_65.textsize(_var_var_119, font=_var_var_109)
-		_var_var_121 = 20
-		_var_var_122 = _var_var_120[0] + 2 * _var_var_121
-		_var_var_123 = _var_var_120[1] + 2 * _var_var_121
+		step_number_text = str(step_number)
+		step_number_bbox = draw.textsize(step_number_text, font=step_number_font)
+		step_number_padding = 20
+		step_number_width = step_number_bbox[0] + 2 * step_number_padding
+		step_number_height = step_number_bbox[1] + 2 * step_number_padding
 		
 		# Step number background
-		_var_var_124 = [
+		step_number_background_bbox = [
 			20,
-			height - _var_var_123 - 20,
-			20 + _var_var_122,
+			height - step_number_height - 20,
+			20 + step_number_width,
 			height - 20
 		]
 		
-		_var_var_65.rounded_rectangle(_var_var_124, radius=15, fill='#007AFF')
+		draw.rounded_rectangle(step_number_background_bbox, radius=15, fill='#007AFF')
 		
 		# Calculate center position for step number
-		_var_var_125 = _var_var_124[0] + (_var_var_122 - _var_var_120[0]) // 2
-		_var_var_126 = _var_var_124[1] + (_var_var_123 - _var_var_120[1]) // 2
+		step_number_x = step_number_background_bbox[0] + (step_number_width - step_number_bbox[0]) // 2
+		step_number_y = step_number_background_bbox[1] + (step_number_height - step_number_bbox[1]) // 2
 		
 		# Draw step number
-		_var_var_65.text(
-			(_var_var_125, _var_var_126),
-			_var_var_119,
-			font=_var_var_109,
+		draw.text(
+			(step_number_x, step_number_y),
+			step_number_text,
+			font=step_number_font,
 			fill='white'
 		)
 		
-		return _var_var_103
+		return base_image
 		
 	def pause(self):
 		"""Pause the agent before the next step"""
@@ -1225,7 +1225,7 @@ class Agent:
 	def _convert_initial_actions(self, actions: List[Dict[str, Dict[str, Any]]]) -> List[ActionModel]:
 		"""Convert dictionary-based actions to ActionModel instances"""
 		converted_actions = []
-		action_model = self.ActionModel
+		action_model_instance = self.ActionModel  # Renamed for clarity
 		for action_dict in actions:
 			# Each action_dict should have a single key-value pair
 			action_name = next(iter(action_dict))
@@ -1239,8 +1239,8 @@ class Agent:
 			validated_params = param_model(**params)
 
 			# Create ActionModel instance with the validated parameters
-			action_model = self.ActionModel(**{action_name: validated_params})
-			converted_actions.append(action_model)
+			action_model_instance = self.ActionModel(**{action_name: validated_params}) # Use the renamed variable
+			converted_actions.append(action_model_instance)
 
 		return converted_actions
 
@@ -1253,25 +1253,24 @@ class Agent:
 		# Create planner message history using full message history
 		planner_messages = [
 			PlannerPrompt(self.controller.registry.get_prompt_description()).get_system_message(),
-			*self._message_manager.get_messages()[1:],  # Use full message history except the first
+			*self.message_manager.get_messages()[1:],  # Use full message history except the first
 		]
 
 		if not self.use_vision_for_planner and self.use_vision:
 			last_state_message: HumanMessage = planner_messages[-1]
 			# remove image from last state message
-			new_msg = ''
+			new_message_content = ''
 			if isinstance(last_state_message.content, list):
-				for msg in last_state_message.content:
-					if msg['type'] == 'text':  # type: ignore
-						new_msg += msg['text']  # type: ignore
-					elif msg['type'] == 'image_url':  # type: ignore
+				for message_part in last_state_message.content:
+					if message_part['type'] == 'text':  # type: ignore
+						new_message_content += message_part['text']  # type: ignore
+					elif message_part['type'] == 'image_url':  # type: ignore
 						continue  # type: ignore
 			else:
-				new_msg = last_state_message.content
+				new_message_content = last_state_message.content
 
-			planner_messages[-1] = HumanMessage(content=new_msg)
+			planner_messages[-1] = HumanMessage(content=new_message_content)
 
-		# Fix: Use instance method instead of undefined global function
 		planner_messages = self._convert_input_messages(planner_messages, self.planner_model_name)
 
 		# Get planner output
@@ -1285,8 +1284,8 @@ class Agent:
 			logger.info(f'Planning Analysis:\n{json.dumps(plan_json, indent=4)}')
 		except json.JSONDecodeError:
 			logger.info(f'Planning Analysis:\n{plan}')
-		except Exception as e:
-			logger.debug(f'Error parsing planning analysis: {e}')
+		except Exception as error:
+			logger.debug(f'Error parsing planning analysis: {error}')
 			logger.info(f'Plan: {plan}')
 
 		return plan
