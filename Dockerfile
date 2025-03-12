@@ -1,9 +1,13 @@
 # Use Python 3.11 slim image as the base
 FROM python:3.11-slim
 
+# Accept API key as build argument
+ARG API_KEY=dummy_api_key
+
 # Set default environment variables
 ENV RUNTIME_API_HOST=http://localhost
 ENV CHROME_INSTANCE_PATH=/usr/bin/chromium
+ENV SANDBOX_API_KEY=$API_KEY
 
 # Install Chromium for browser automation and clean up APT caches
 RUN apt-get update && \
@@ -24,8 +28,10 @@ RUN python -m venv venv
 RUN ./venv/bin/pip install --upgrade pip && \
     ./venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# Create the secrets directory and generate a placeholder API key
-RUN mkdir -p $HOME/.secrets && echo "dummy_api_key" > $HOME/.secrets/sandbox_api_token
+# Create the secrets directory and set the API key
+RUN mkdir -p $HOME/.secrets && \
+    echo "$SANDBOX_API_KEY" > $HOME/.secrets/sandbox_api_token && \
+    chmod 600 $HOME/.secrets/sandbox_api_token
 
 # Expose the internal API port
 EXPOSE 8330
