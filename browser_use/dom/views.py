@@ -49,10 +49,12 @@ class DOMElementNode(DOMBaseNode):
     To properly reference the element we need to recursively switch the root node until we find the element (work you way up the tree with `.parent`)
     """
 
-    tag_name: str
-    xpath: str
-    attributes: Dict[str, str]
-    children: List[DOMBaseNode]
+    # Fix: Give default values to all required parameters that follow a parameter with a default
+    tag_name: str = field(default="")
+    xpath: str = field(default="")
+    attributes: Dict[str, str] = field(default_factory=dict)
+    children: List[DOMBaseNode] = field(default_factory=list)
+    
     is_interactive: bool = False
     is_top_element: bool = False
     is_in_viewport: bool = False

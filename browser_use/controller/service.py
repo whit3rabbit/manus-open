@@ -39,7 +39,8 @@ class Controller(Generic[Context]):
     ):
         self.exclude_actions = exclude_actions
         self.output_model = output_model
-        self.registry = Registry[Context](exclude_actions)
+        # Fix: Remove type parameter since Registry is not a generic class
+        self.registry = Registry(exclude_actions)
         self._register_default_actions()
 
     def _register_default_actions(self):
