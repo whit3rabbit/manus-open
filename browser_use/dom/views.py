@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Dict, List, Optional
 from browser_use.dom.history_tree_processor.view import CoordinateSet, HashedDomElement, ViewportInfo
@@ -17,7 +17,8 @@ class DOMBaseNode:
 
 @dataclass(frozen=False)
 class DOMTextNode(DOMBaseNode):
-    text: str
+    # Fix: Use field() with default_factory to avoid non-default argument following default argument
+    text: str = field(default="")  # Give text a default value
     type: str = 'TEXT_NODE'
 
     def has_parent_with_highlight_index(self) -> bool:
@@ -115,7 +116,9 @@ class DOMElementNode(DOMBaseNode):
         collect_text(self, 0)
         return '\n'.join(text_parts).strip()
 
-    @time_execution_sync('--clickable_elements_to_string')
+    # Note: the time_execution_sync decorator is missing from the provided code
+    # Commenting it out for now
+    # @time_execution_sync('--clickable_elements_to_string')
     def clickable_elements_to_string(self, include_attributes: list[str] | None = None) -> str:
         """Convert the processed DOM content to HTML."""
         formatted_text = []
