@@ -1,33 +1,35 @@
 # Use Python 3.11 slim image as the base
 FROM python:3.11-slim
 
-# Set default environment variables
+# Set default environment variables (update HOME for the ubuntu user)
 ENV RUNTIME_API_HOST=http://localhost
 ENV CHROME_INSTANCE_PATH=/usr/bin/chromium
-ENV HOME=/home/manus
+ENV HOME=/home/ubuntu
 
-# Install Chromium for browser automation and clean up APT caches
+# Install dependencies: Chromium, bash, sudo, curl, bc, then install Node.js 20.18.0
 RUN apt-get update && \
-    apt-get install -y chromium bash sudo && \
+    apt-get install -y chromium bash sudo curl bc && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs=20.18.0-1nodesource && \
     rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user and add to sudoers
-RUN useradd -m -s /bin/bash manus && \
-    echo "manus ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/manus && \
-    chmod 0440 /etc/sudoers.d/manus
+# Create a non-root user (ubuntu) and add to sudoers
+RUN useradd -m -s /bin/bash ubuntu && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
+    chmod 0440 /etc/sudoers.d/ubuntu
 
 # Create the target directory structure and set proper permissions
 RUN mkdir -p /opt/.manus/.sandbox-runtime && \
-    chown -R manus:manus /opt/.manus
+    chown -R ubuntu:ubuntu /opt/.manus
 
 # Set working directory
 WORKDIR /opt/.manus/.sandbox-runtime
 
-# Copy the repository files into the container
-COPY --chown=manus:manus . /opt/.manus/.sandbox-runtime/
+# Copy the repository files into the container with the correct ownership
+COPY --chown=ubuntu:ubuntu . /opt/.manus/.sandbox-runtime/
 
 # Switch to non-root user
-USER manus
+USER ubuntu
 
 # Create a Python virtual environment in the working directory
 RUN python -m venv venv
