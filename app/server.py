@@ -23,6 +23,13 @@ from app.tools.browser.browser_manager import BrowserDeadError, BrowserManager, 
 from app.tools.terminal import terminal_manager
 from app.tools.text_editor import text_editor
 from app.types.messages import BrowserActionRequest, BrowserActionResponse, TerminalApiResponse, TerminalWriteApiRequest, TextEditorAction, TextEditorActionResult
+from app.helpers.local_storage import (
+    LOCAL_STORAGE_DIR, 
+    upload_to_local_storage, 
+    handle_multipart_upload,
+    upload_part_to_local_storage,
+    combine_parts
+)
 
 app = FastAPI()
 app.router.route_class = TimedRoute
@@ -40,15 +47,16 @@ class FileUploadRequest(BaseModel):
 
 MULTIPART_THRESHOLD = 10485760  # 10MB
 
-@app.post("/file/upload_to_s3")
+@app.post("/file/upload")
 async def upload_file(cmd: FileUploadRequest = Body()):
     """
-    Upload a file to S3. If file size exceeds threshold, return size information instead.
+    Upload a file to local storage. If file size exceeds threshold, return size information 
+    for multipart upload.
 
     Request body:
     {
         "file_path": str,         # The local file path to upload
-        "presigned_url": str      # The presigned URL to upload to
+        "filename": str           # Optional filename for the uploaded file (default: use original filename)
     }
 
     Returns:
@@ -64,7 +72,7 @@ async def upload_file(cmd: FileUploadRequest = Body()):
         
         file_size = file_path.stat().st_size
         content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
-        file_name = file_path.name
+        file_name = cmd.filename if hasattr(cmd, "filename") and cmd.filename else file_path.name
         
         if file_size > MULTIPART_THRESHOLD:
             return {
@@ -81,14 +89,13 @@ async def upload_file(cmd: FileUploadRequest = Body()):
         with open(file_path, 'rb') as f:
             content = f.read()
             
-        upload_result = await upload_to_presigned_url(
+        upload_result = await upload_to_local_storage(
             data=content, 
-            presigned_url=cmd.presigned_url, 
-            content_type=content_type, 
-            filename=file_name
+            filename=file_name, 
+            content_type=content_type
         )
         
-        if not upload_result:
+        if not upload_result['success']:
             raise HTTPException(status_code=500, detail="Failed to upload file")
         
         return {
@@ -98,7 +105,8 @@ async def upload_file(cmd: FileUploadRequest = Body()):
             "content_type": content_type,
             "file_size": file_size,
             "requires_multipart": False,
-            "upload_result": {"success": True, "uploaded": True}
+            "upload_result": upload_result,
+            "file_path": upload_result['path']
         }
     except HTTPException:
         raise
@@ -106,26 +114,18 @@ async def upload_file(cmd: FileUploadRequest = Body()):
         logger.error(f"Error handling file upload: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/file/multipart_upload_to_s3")
+@app.post("/file/multipart_upload")
 async def multipart_upload(cmd: MultipartUploadRequest = Body(...)):
     """
-    使用预签名URLs上传文件分片  # Upload file chunks using presigned URLs
+    Upload file chunks using local storage
     
     Request body:
     {
-        "file_path": str,              # 要上传的文件路径  # File path to upload
-        "presigned_urls": [            # 预签名URL列表  # List of presigned URLs
-            {
-                "part_number": int,    # 分片编号（从1开始）  # Part number (starting from 1)
-                "url": str             # 该分片的预签名URL  # Presigned URL for this part
-            },
-            ...
-        ],
-        "part_size": int              # 每个分片的大小（字节）  # Size of each part in bytes
+        "file_path": str,              # File path to upload
+        "part_size": int               # Size of each part in bytes
     }
     """
     try:
-        print("1")
         file_path = Path(cmd.file_path).resolve()
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found")
@@ -133,22 +133,40 @@ async def multipart_upload(cmd: MultipartUploadRequest = Body(...)):
             raise HTTPException(status_code=400, detail="Path is not a file")
         
         file_size = file_path.stat().st_size
+        file_name = file_path.name
         expected_parts = math.ceil(file_size / cmd.part_size)
         
-        if len(cmd.presigned_urls) != expected_parts:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Number of presigned URLs ({len(cmd.presigned_urls)}) does not match expected parts ({expected_parts})"
-            )
+        # Get "presigned URLs" (actually just paths) for each part
+        presigned_parts, temp_dir = await handle_multipart_upload(str(file_path), file_name, cmd.part_size)
         
-        results = await upload_file_parts(str(file_path), cmd.presigned_urls, cmd.part_size)
+        # Upload each part
+        results = []
+        for part in presigned_parts:
+            part_number = part.part_number
+            start_pos = (part_number - 1) * cmd.part_size
+            end_pos = min(start_pos + cmd.part_size, file_size)
+            
+            with open(file_path, 'rb') as f:
+                f.seek(start_pos)
+                part_data = f.read(end_pos - start_pos)
+            
+            result = await upload_part_to_local_storage(part_data, part_number, temp_dir, file_name)
+            results.append(result)
         
+        # Count successful uploads
         successful = sum(1 for r in results if r.success)
         failed = len(results) - successful
         
+        # If all parts were successfully uploaded, combine them
+        if failed == 0:
+            final_path = await combine_parts(temp_dir, file_name, results)
+            combined_message = f"All parts combined into {final_path}"
+        else:
+            combined_message = "Not all parts were successfully uploaded, cannot combine"
+        
         response = MultipartUploadResponse(
             status="success" if failed == 0 else "partial_success",
-            message="All parts uploaded successfully" if failed == 0 else f"Uploaded {successful}/{len(results)} parts successfully",
+            message=combined_message if failed == 0 else f"Uploaded {successful}/{len(results)} parts successfully",
             file_name=file_path.name,
             parts_results=results,
             successful_parts=successful,
@@ -214,7 +232,7 @@ async def batch_download(cmd: DownloadRequest):
             },
             ...
         ],
-        "folder": "optional/subfolder/path"  # Optional folder to save files /home/ubuntu/upload/optional/subfolder/
+        "folder": "optional/subfolder/path"  # Optional folder to save files /home/manus/upload/optional/subfolder/
     }
     """
     try:
@@ -222,7 +240,7 @@ async def batch_download(cmd: DownloadRequest):
         
         async def download_file(client, item):
             file_name = os.path.basename(item.filename)
-            base_path = "/home/ubuntu/upload/"
+            base_path = "/home/manus/upload/"
             target_path = base_path
             
             if hasattr(cmd, "folder") and cmd.folder:
@@ -574,14 +592,13 @@ class ZipAndUploadResponse(BaseModel):
     message: str
     error: str | None = None
 
-@app.post("/zip-and-upload")
-async def zip_and_upload(request: ZipAndUploadRequest):
+@app.post("/zip-file")
+async def zip_file(request: ZipAndUploadRequest):
     """
-    Zip a directory (excluding node_modules) and upload to S3
+    Zip a directory (excluding node_modules) and save to local storage
     Request body:
     {
         "directory": "/path/to/directory",
-        "upload_url": "https://s3-presigned-url...",
         "project_type": "frontend" | "backend" | "nextjs"
     }
     """
@@ -644,7 +661,7 @@ async def zip_and_upload(request: ZipAndUploadRequest):
         project_name = os.path.basename(request.directory.rstrip('/'))
         
         # Path for the output zip file
-        output_zip = f"/tmp/{project_name}.zip"
+        output_zip = f"{LOCAL_STORAGE_DIR}/{project_name}.zip"
         
         # Create the zip archive
         success, message = create_zip_archive(request.directory, output_zip)
@@ -663,35 +680,16 @@ async def zip_and_upload(request: ZipAndUploadRequest):
                 error="Zip operation failed"
             ).model_dump()
         
-        # Upload the zip to S3
-        async with httpx.AsyncClient() as client:
-            with open(output_zip, 'rb') as f:
-                response = await client.put(
-                    request.upload_url,
-                    content=f.read(),
-                    headers={'Content-Type': 'application/zip'}
-                )
-                
-            if response.status_code not in (200, 201):
-                return ZipAndUploadResponse(
-                    status="error",
-                    message="Failed to upload to S3",
-                    error=f"Upload failed with status {response.status_code}: {response.text}"
-                ).model_dump()
-        
-        # Clean up
-        os.remove(output_zip)
-        
-        # Remove the temporary directory for frontend projects
+        # Clean up temporary directory for frontend projects
         if request.project_type == ProjectType.FRONTEND:
             shutil.rmtree(temp_base_dir)
         
         return ZipAndUploadResponse(
             status="success",
-            message=f"Successfully processed {request.project_type} project and uploaded to S3"
+            message=f"Successfully processed {request.project_type} project and saved zip to {output_zip}"
         ).model_dump()
     except Exception as e:
-        logger.error(f"Error in zip-and-upload: {str(e)}")
+        logger.error(f"Error in zip-file: {str(e)}")
         
         # Clean up temp directory if it exists
         if request.project_type == ProjectType.FRONTEND:

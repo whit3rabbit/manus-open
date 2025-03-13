@@ -270,32 +270,56 @@ class BrowserManager:
 
     async def upload_screenshots(self, cmd: BrowserActionRequest, clean_screenshot: bytes, marked_screenshot: bytes):
         """
-        Upload screenshots to the provided presigned URLs.
+        Save screenshots to local storage instead of uploading to S3.
         """
+        from app.helpers.local_storage import upload_to_local_storage
+        
+        screenshots_dir = f"{DEFAULT_WORKING_DIR}/screenshots"
+        os.makedirs(screenshots_dir, exist_ok=True)
+        
+        marked_path = None
+        clean_path = None
+        
         if cmd.screenshot_presigned_url:
             try:
-                await upload_to_presigned_url(
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                marked_filename = f"marked_{timestamp}.webp"
+                
+                result = await upload_to_local_storage(
                     marked_screenshot,
-                    cmd.screenshot_presigned_url,
-                    "image/webp",
-                    "marked.webp"
+                    marked_filename,
+                    "image/webp"
                 )
-                logger.info(f"Screenshot uploaded successfully to {cmd.screenshot_presigned_url}")
+                
+                if result['success']:
+                    marked_path = result['path']
+                    logger.info(f"Screenshot saved successfully to {marked_path}")
+                else:
+                    logger.error("Failed to save marked screenshot")
             except Exception as e:
-                logger.error("Failed to upload screenshot")
+                logger.error(f"Error saving marked screenshot: {e}")
         else:
-            logger.info("No presigned URL provided for screenshot, skipped uploading")
+            logger.info("No screenshot requested, skipped saving")
 
         if cmd.clean_screenshot_presigned_url:
             try:
-                await upload_to_presigned_url(
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                clean_filename = f"clean_{timestamp}.webp"
+                
+                result = await upload_to_local_storage(
                     clean_screenshot,
-                    cmd.clean_screenshot_presigned_url,
-                    "image/webp",
-                    "clean.webp"
+                    clean_filename,
+                    "image/webp"
                 )
-                logger.info(f"Clean screenshot uploaded successfully to {cmd.clean_screenshot_presigned_url}")
+                
+                if result['success']:
+                    clean_path = result['path']
+                    logger.info(f"Clean screenshot saved successfully to {clean_path}")
+                else:
+                    logger.error("Failed to save clean screenshot")
             except Exception as e:
-                logger.error("Failed to upload clean screenshot")
+                logger.error(f"Error saving clean screenshot: {e}")
         else:
-            logger.info("No presigned clean URL provided for screenshot, skipped uploading")
+            logger.info("No clean screenshot requested, skipped saving")
+        
+        return marked_path, clean_path

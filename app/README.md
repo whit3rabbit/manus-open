@@ -26,6 +26,7 @@ Below is a tree view of the repository with a short description for each compone
 app/
 ├── helpers/                  # Utility modules for shell commands and file operations
 │   ├── tool_helpers.py       # Async shell command execution and output truncation utilities
+│   ├── local_storage.py      # Removed S3 upload and now stores files locally
 │   ├── utils.py              # File uploads, directory management, and multipart upload logic
 │   └── __init__.py
 ├── logger.py                 # Logging configuration for the application
@@ -63,8 +64,8 @@ The API is built with FastAPI and provides the following endpoints:
 
 | HTTP Method | Endpoint                         | Description                                                                       |
 |-------------|----------------------------------|-----------------------------------------------------------------------------------|
-| POST        | `/file/upload_to_s3`             | Upload a file to S3. Returns multipart info if the file exceeds the size threshold. |
-| POST        | `/file/multipart_upload_to_s3`   | Upload file parts using presigned URLs for multipart uploads.                     |
+| POST        | `/file/upload`                   | Upload a file to S3. Returns multipart info if the file exceeds the size threshold. |
+| POST        | `/file/multipart_upload`         | Upload file parts using presigned URLs for multipart uploads.                     |
 | GET         | `/file`                          | Download a file from a given path.                                                |
 | POST        | `/request-download-attachments`  | Batch download files from specified URLs and optionally save to a subfolder.       |
 
@@ -93,7 +94,8 @@ The API is built with FastAPI and provides the following endpoints:
 | POST        | `/text_editor`    | Execute a text editor action (e.g., open or update a file).                     |
 | POST        | `/init-sandbox`   | Initialize the sandbox environment by writing provided secrets to `.secrets`.    |
 | GET         | `/healthz`        | Health check endpoint to verify overall service status.                        |
-| POST        | `/zip-and-upload` | Zip a directory (excluding specific folders) and upload the archive to S3.       |
+| GET         | `/file`                         | Download a file from the given path.                                             |
+| POST        | `/zip-file`                     | Zip a directory and save the archive to local storage.                          |
 
 ---
 
