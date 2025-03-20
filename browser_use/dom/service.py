@@ -5,6 +5,7 @@ from typing import Optional
 from playwright.async_api import Page
 from browser_use.dom.history_tree_processor.view import Coordinates
 from browser_use.dom.views import CoordinateSet, DOMBaseNode, DOMElementNode, DOMState, DOMTextNode, SelectorMap, ViewportInfo
+import json
 
 logger = logging.getLogger(__name__)
 
