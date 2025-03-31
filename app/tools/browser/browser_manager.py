@@ -67,26 +67,27 @@ class BrowserManager:
         try:
             browser_config = BrowserConfig(
                 headless=self.headless,
-                chrome_executable_path=self.chrome_instance_path,
-                args=[
-                    "--disable-web-security",
-                    "--disable-features=IsolateOrigins,site-per-process",
-                    "--disable-site-isolation-trials"
-                ]
+                # chrome_instance_path=self.chrome_instance_path,
+                # args=[
+                #     "--disable-web-security",
+                #     "--disable-features=IsolateOrigins,site-per-process",
+                #     "--disable-site-isolation-trials"
+                # ]
             )
             browser_context_config = BrowserContextConfig(
-                viewport_width=1280,
-                viewport_height=800,
-                default_timeout_ms=30000,
-                default_navigation_timeout_ms=45000,
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+                # viewport_width=1280,
+                # viewport_height=800,
+                # default_timeout_ms=30000,
+                # default_navigation_timeout_ms=45000,
+                # user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
             )
-            self.browser = await Browser.create(browser_config)
-            self.browser_context = await BrowserContext.create(self.browser, browser_context_config)
-            self.controller = Controller.create(self.browser_context)
+            self.browser = Browser(browser_config)
+            self.browser_context = BrowserContext(self.browser, browser_context_config)
+            self.controller = Controller()
 
             # Navigate to a blank page to prepare the context
-            await self.browser_context.goto("about:blank")
+            # await self.browser_context.goto("about:blank")
+            await self.browser_context.get_session()
             self.status = "ready"
             logger.info("Browser initialized successfully")
         except Exception as e:
@@ -149,25 +150,25 @@ class BrowserManager:
             # Update state
             logger.info("Updating state...")
             session = await self.browser_context.get_session()
-            await self.browser_context.update_state()
+            session.cached_state = await self.browser_context.get_state()
             cached_state = session.cached_state
-
-            elements = ""
-            if hasattr(cached_state, "clickable_elements"):
-                elements = "\n".join(f"{el.index}[:]{el.description}" 
-                                     for el in cached_state.clickable_elements.values())
+            
+            elements = cached_state.element_tree.clickable_elements_to_string()
+            # if hasattr(cached_state, "clickable_elements"):
+            #     elements = "\n".join(f"{el.index}[:]{el.description}" 
+            #                          for el in cached_state.clickable_elements.values())
 
             screenshot_save_path = self.get_screenshot_save_path(cached_state.url)
             logger.info("Taking screenshots")
             try:
                 clean_screenshot = await self.browser_context.take_screenshot(
-                    full_page=False, save_path=screenshot_save_path
+                    save_path=screenshot_save_path
                 )
             except ScreenshotError as e:
                 logger.error(f"Error taking clean screenshot: {e}")
                 clean_screenshot = b""
             try:
-                marked_screenshot = await self.browser_context.take_screenshot(full_page=True)
+                marked_screenshot = await self.browser_context.take_screenshot()
             except ScreenshotError as e:
                 logger.error(f"Error taking marked screenshot: {e}")
                 marked_screenshot = b""
