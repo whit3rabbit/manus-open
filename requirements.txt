@@ -37,7 +37,7 @@ google-generativeai==0.8.4
 greenlet==3.1.1
 grpcio==1.67.1
 grpcio-status==1.67.1
-h11==0.14.0
+h11==0.16.0
 html2text==2024.2.26
 htmldate==1.9.3
 httpcore==1.0.7
